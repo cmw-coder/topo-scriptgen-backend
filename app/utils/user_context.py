@@ -4,9 +4,11 @@
 
 AI_FingerPrint_UUID: 20251224-nhJdWsTr
 """
+
 import os
 import getpass
 from typing import Optional
+
 
 class UserContext:
     """用户上下文管理器"""
@@ -20,7 +22,7 @@ class UserContext:
         if cls._current_username is None:
             cls._current_username = getpass.getuser()
             # 设置为环境变量
-            os.environ['SCRIPTGEN_USERNAME'] = cls._current_username
+            os.environ["SCRIPTGEN_USERNAME"] = cls._current_username
         return cls._current_username
 
     @classmethod
@@ -42,6 +44,7 @@ class UserContext:
             bool: 是否成功设置权限
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         try:
@@ -64,7 +67,9 @@ class UserContext:
                             os.chmod(file_path, mode)
                         except PermissionError:
                             if not silent:
-                                logger.warning(f"权限不足: 无法设置文件权限 {file_path}")
+                                logger.warning(
+                                    f"权限不足: 无法设置文件权限 {file_path}"
+                                )
                 # 最后设置顶层目录的权限
                 os.chmod(path, mode)
             return True
@@ -89,6 +94,7 @@ class UserContext:
             bool: 是否成功创建并设置权限
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         try:
@@ -114,6 +120,7 @@ class UserContext:
             dict: 包含检查结果和修复建议的字典
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         result = {
@@ -121,15 +128,19 @@ class UserContext:
             "writable": False,
             "permission_fixed": False,
             "error": None,
-            "suggestions": []
+            "suggestions": [],
         }
 
         try:
             # 检查目录是否存在
             if not os.path.exists(target_dir):
                 result["error"] = f"目录不存在: {target_dir}"
-                result["suggestions"].append(f"请先创建目录: sudo mkdir -p {target_dir}")
-                result["suggestions"].append(f"然后设置权限: sudo chmod 777 {target_dir}")
+                result["suggestions"].append(
+                    f"请先创建目录: sudo mkdir -p {target_dir}"
+                )
+                result["suggestions"].append(
+                    f"然后设置权限: sudo chmod 777 {target_dir}"
+                )
                 return result
 
             result["exists"] = True
@@ -137,14 +148,18 @@ class UserContext:
             # 检查是否有写权限
             test_file = os.path.join(target_dir, ".permission_test")
             try:
-                with open(test_file, 'w') as f:
-                    f.write('test')
+                with open(test_file, "w") as f:
+                    f.write("test")
                 os.remove(test_file)
                 result["writable"] = True
             except PermissionError:
                 result["error"] = f"权限不足: 无法写入目录 {target_dir}"
-                result["suggestions"].append(f"请执行命令修复权限: sudo chmod 777 {target_dir}")
-                result["suggestions"].append(f"或者修改目录所有者: sudo chown -R $USER:$USER {target_dir}")
+                result["suggestions"].append(
+                    f"请执行命令修复权限: sudo chmod 777 {target_dir}"
+                )
+                result["suggestions"].append(
+                    f"或者修改目录所有者: sudo chown -R $USER:$USER {target_dir}"
+                )
                 return result
 
             # 尝试修复权限
@@ -152,13 +167,16 @@ class UserContext:
                 result["permission_fixed"] = True
                 logger.info(f"权限修复成功: {target_dir}")
             else:
-                result["suggestions"].append(f"无法自动修复权限，请手动执行: sudo chmod -R 777 {target_dir}")
+                result["suggestions"].append(
+                    f"无法自动修复权限，请手动执行: sudo chmod -R 777 {target_dir}"
+                )
 
         except Exception as e:
             result["error"] = f"检查权限时发生错误: {str(e)}"
             logger.error(result["error"])
 
         return result
+
 
 # 创建全局实例
 user_context = UserContext()

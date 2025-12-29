@@ -6,16 +6,17 @@ import os
 from typing import Optional
 
 from app.core.path_manager import path_manager
-from app.models.topo import Network, Device, Link, TopoxRequest, TopoxResponse
+from app.models.topox import Network, Device, Link, TopoxRequest, TopoxResponse
 from app.utils.user_context import user_context
 
 logger = logging.getLogger(__name__)
 
+
 class TopoService:
     """拓扑服务，处理topox文件的保存和转换
-    
-AI_FingerPrint_UUID: 20251225-LWJLVNvB
-"""
+
+    AI_FingerPrint_UUID: 20251225-LWJLVNvB
+    """
 
     def __init__(self):
         self.path_manager = path_manager
@@ -83,7 +84,9 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
                     ET.SubElement(port_elem, "TAG").text = ""
 
             self._indent(network_elem)
-            xml_bytes = ET.tostring(network_elem, encoding="utf-8", xml_declaration=True)
+            xml_bytes = ET.tostring(
+                network_elem, encoding="utf-8", xml_declaration=True
+            )
             return xml_bytes.decode("utf-8")
 
         except Exception as e:
@@ -112,7 +115,9 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
                         name_elem = prop_elem.find("NAME")
                         location_elem = prop_elem.find("LOCATION")
                         device_name = name_elem.text if name_elem is not None else ""
-                        device_location = location_elem.text if location_elem is not None else ""
+                        device_location = (
+                            location_elem.text if location_elem is not None else ""
+                        )
 
                     if device_name:  # 只添加有名称的设备
                         network.device_list.append(
@@ -130,8 +135,12 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
                     def _node_details(node: ET.Element) -> tuple[str, str]:
                         device_elem = node.find("DEVICE")
                         port_name_elem = node.find("PORT/NAME")
-                        device_name = device_elem.text if device_elem is not None else ""
-                        port_name = port_name_elem.text if port_name_elem is not None else ""
+                        device_name = (
+                            device_elem.text if device_elem is not None else ""
+                        )
+                        port_name = (
+                            port_name_elem.text if port_name_elem is not None else ""
+                        )
                         return device_name or "", port_name or ""
 
                     start_device, start_port = _node_details(nodes[0])
@@ -144,7 +153,7 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
                                 start_device=start_device,
                                 start_port=start_port,
                                 end_device=end_device,
-                                end_port=end_port
+                                end_port=end_port,
                             )
                         )
 
@@ -157,7 +166,9 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
             logger.error(f"解析topox XML时发生未知错误: {str(e)}")
             raise
 
-    async def save_topox(self, request: TopoxRequest, filename: str = "default.topox") -> TopoxResponse:
+    async def save_topox(
+        self, request: TopoxRequest, filename: str = "default.topox"
+    ) -> TopoxResponse:
         """保存topox文件"""
         try:
             # 构建XML内容
@@ -185,7 +196,7 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
             return TopoxResponse(
                 network=request.network,
                 xml_content=xml_content,
-                file_path=str(file_path)
+                file_path=str(file_path),
             )
 
         except Exception as e:
@@ -204,7 +215,7 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
                 return TopoxResponse(
                     network=Network(device_list=[], link_list=[]),
                     xml_content=None,
-                    file_path=str(file_path)
+                    file_path=str(file_path),
                 )
 
             # 读取文件内容
@@ -216,9 +227,7 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
             logger.info(f"成功加载topox文件: {file_path}")
 
             return TopoxResponse(
-                network=network,
-                xml_content=xml_content,
-                file_path=str(file_path)
+                network=network, xml_content=xml_content, file_path=str(file_path)
             )
 
         except ET.ParseError as e:
@@ -256,10 +265,7 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
                 return []
 
             # 列出所有.topox文件
-            topox_files = [
-                f.name for f in topox_dir.glob("*.topox")
-                if f.is_file()
-            ]
+            topox_files = [f.name for f in topox_dir.glob("*.topox") if f.is_file()]
 
             return sorted(topox_files)
 
@@ -306,6 +312,7 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
         except Exception as e:
             logger.error(f"复制文件到 AIGC 目标目录失败: {str(e)}")
             raise
+
 
 # 创建topo服务实例
 topo_service = TopoService()

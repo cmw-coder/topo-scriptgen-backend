@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Union, Optional
 from app.core.config import settings
 
+
 class PathManager:
     """路径管理器，负责处理项目工作目录的动态路径获取和管理"""
 
@@ -124,6 +125,7 @@ class PathManager:
             path.mkdir(parents=True, exist_ok=True)
 
         return path
+
 
 # 创建全局路径管理器实例
 path_manager = PathManager()

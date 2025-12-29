@@ -11,10 +11,11 @@ from app.models.common import DirectoryItem, FileOperationRequest, FileOperation
 
 logger = logging.getLogger(__name__)
 
+
 class FileService:
     """文件操作服务
-AI_FingerPrint_UUID: 20251225-VPMtKjgr
-"""
+    AI_FingerPrint_UUID: 20251225-VPMtKjgr
+    """
 
     def __init__(self):
         self.path_manager = path_manager
@@ -29,7 +30,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=directory_path,
                     operation="read",
                     success=False,
-                    message="路径不安全或超出项目范围"
+                    message="路径不安全或超出项目范围",
                 )
 
             if not resolved_path.exists():
@@ -37,7 +38,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=directory_path,
                     operation="read",
                     success=False,
-                    message="目录不存在"
+                    message="目录不存在",
                 )
 
             if not resolved_path.is_dir():
@@ -45,7 +46,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=directory_path,
                     operation="read",
                     success=False,
-                    message="路径不是目录"
+                    message="路径不是目录",
                 )
 
             # 构建目录结构
@@ -56,7 +57,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 operation="read",
                 success=True,
                 content=str([item.model_dump() for item in items]),
-                message=f"成功读取目录，共 {len(items)} 个项目"
+                message=f"成功读取目录，共 {len(items)} 个项目",
             )
 
         except Exception as e:
@@ -65,10 +66,12 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 path=directory_path,
                 operation="read",
                 success=False,
-                message=f"读取目录失败: {str(e)}"
+                message=f"读取目录失败: {str(e)}",
             )
 
-    async def read_file(self, file_path: str, encoding: str = "utf-8") -> FileOperationResponse:
+    async def read_file(
+        self, file_path: str, encoding: str = "utf-8"
+    ) -> FileOperationResponse:
         """读取文件内容"""
         try:
             # 解析路径并检查安全性
@@ -78,7 +81,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="read",
                     success=False,
-                    message="路径不安全或超出项目范围"
+                    message="路径不安全或超出项目范围",
                 )
 
             if not resolved_path.exists():
@@ -86,7 +89,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="read",
                     success=False,
-                    message="文件不存在"
+                    message="文件不存在",
                 )
 
             if not resolved_path.is_file():
@@ -94,7 +97,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="read",
                     success=False,
-                    message="路径不是文件"
+                    message="路径不是文件",
                 )
 
             # 检查文件大小
@@ -104,7 +107,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="read",
                     success=False,
-                    message=f"文件过大，最大支持 {settings.MAX_FILE_SIZE} 字节"
+                    message=f"文件过大，最大支持 {settings.MAX_FILE_SIZE} 字节",
                 )
 
             # 检查文件扩展名
@@ -113,11 +116,11 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="read",
                     success=False,
-                    message=f"不支持的文件类型，支持的类型: {', '.join(settings.ALLOWED_EXTENSIONS)}"
+                    message=f"不支持的文件类型，支持的类型: {', '.join(settings.ALLOWED_EXTENSIONS)}",
                 )
 
             # 异步读取文件
-            async with aiofiles.open(resolved_path, 'r', encoding=encoding) as file:
+            async with aiofiles.open(resolved_path, "r", encoding=encoding) as file:
                 content = await file.read()
 
             return FileOperationResponse(
@@ -126,7 +129,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 success=True,
                 content=content,
                 size=file_size,
-                message="文件读取成功"
+                message="文件读取成功",
             )
 
         except UnicodeDecodeError:
@@ -134,7 +137,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 path=file_path,
                 operation="read",
                 success=False,
-                message="文件编码错误，请检查文件编码格式"
+                message="文件编码错误，请检查文件编码格式",
             )
         except Exception as e:
             logger.error(f"读取文件失败: {file_path}, 错误: {str(e)}")
@@ -142,10 +145,12 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 path=file_path,
                 operation="read",
                 success=False,
-                message=f"读取文件失败: {str(e)}"
+                message=f"读取文件失败: {str(e)}",
             )
 
-    async def write_file(self, file_path: str, content: str, encoding: str = "utf-8") -> FileOperationResponse:
+    async def write_file(
+        self, file_path: str, content: str, encoding: str = "utf-8"
+    ) -> FileOperationResponse:
         """写入文件内容"""
         try:
             # 解析路径并检查安全性
@@ -155,7 +160,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="write",
                     success=False,
-                    message="路径不安全或超出项目范围"
+                    message="路径不安全或超出项目范围",
                 )
 
             # 检查内容大小
@@ -165,7 +170,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="write",
                     success=False,
-                    message=f"文件内容过大，最大支持 {settings.MAX_FILE_SIZE} 字节"
+                    message=f"文件内容过大，最大支持 {settings.MAX_FILE_SIZE} 字节",
                 )
 
             # 确保父目录存在
@@ -173,7 +178,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
             parent_dir.mkdir(parents=True, exist_ok=True)
 
             # 异步写入文件
-            async with aiofiles.open(resolved_path, 'w', encoding=encoding) as file:
+            async with aiofiles.open(resolved_path, "w", encoding=encoding) as file:
                 await file.write(content)
 
             # 检查文件扩展名
@@ -183,7 +188,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     operation="write",
                     success=True,
                     size=content_size,
-                    message=f"文件写入成功，但文件类型不在支持列表中。支持的类型: {', '.join(settings.ALLOWED_EXTENSIONS)}"
+                    message=f"文件写入成功，但文件类型不在支持列表中。支持的类型: {', '.join(settings.ALLOWED_EXTENSIONS)}",
                 )
 
             return FileOperationResponse(
@@ -191,7 +196,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 operation="write",
                 success=True,
                 size=content_size,
-                message="文件写入成功"
+                message="文件写入成功",
             )
 
         except Exception as e:
@@ -200,7 +205,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 path=file_path,
                 operation="write",
                 success=False,
-                message=f"写入文件失败: {str(e)}"
+                message=f"写入文件失败: {str(e)}",
             )
 
     async def delete_file(self, file_path: str) -> FileOperationResponse:
@@ -213,7 +218,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="delete",
                     success=False,
-                    message="路径不安全或超出项目范围"
+                    message="路径不安全或超出项目范围",
                 )
 
             if not resolved_path.exists():
@@ -221,7 +226,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                     path=file_path,
                     operation="delete",
                     success=False,
-                    message="文件或目录不存在"
+                    message="文件或目录不存在",
                 )
 
             # 获取删除前的大小信息
@@ -231,8 +236,11 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 operation_type = "文件"
             else:
                 # 删除目录及其内容
-                size = sum(f.stat().st_size for f in resolved_path.rglob('*') if f.is_file())
+                size = sum(
+                    f.stat().st_size for f in resolved_path.rglob("*") if f.is_file()
+                )
                 import shutil
+
                 shutil.rmtree(resolved_path)
                 operation_type = "目录"
 
@@ -241,7 +249,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 operation="delete",
                 success=True,
                 size=size,
-                message=f"{operation_type}删除成功"
+                message=f"{operation_type}删除成功",
             )
 
         except Exception as e:
@@ -250,7 +258,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 path=file_path,
                 operation="delete",
                 success=False,
-                message=f"删除失败: {str(e)}"
+                message=f"删除失败: {str(e)}",
             )
 
     async def get_directory_tree(self, directory_path: str = "") -> List[DirectoryItem]:
@@ -299,12 +307,12 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                             children=None,
                             is_file=True,
                             size=stat_info.st_size,
-                            modified_time=modified_time
+                            modified_time=modified_time,
                         )
                         items.append(file_item)
                     elif item.is_dir():
                         # 过滤掉 .venv 和 test_example 目录
-                        if item.name in ['.venv', 'test_example']:
+                        if item.name in [".venv", "test_example"]:
                             logger.debug(f"过滤目录: {item.name}")
                             continue
 
@@ -316,7 +324,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                             children=children if children else [],
                             is_file=False,
                             size=None,
-                            modified_time=modified_time
+                            modified_time=modified_time,
                         )
                         items.append(dir_item)
                 except (OSError, PermissionError) as e:
@@ -330,6 +338,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
             logger.error(f"读取目录失败: {directory_path}, 错误: {str(e)}")
 
         return items
+
 
 # 创建文件服务实例
 file_service = FileService()

@@ -3,15 +3,26 @@ import asyncio
 import uuid
 import os
 import shutil
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    Query,
+    Depends,
+    BackgroundTasks,
+)
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.services.claude_service import claude_service
 from app.models.claude import (
-    ClaudeCommandRequest, ClaudeCommandResponse, ClaudeLogQuery,
-    ClaudeLogEntry, ClaudeCommandType
+    ClaudeCommandRequest,
+    ClaudeCommandResponse,
+    ClaudeLogQuery,
+    ClaudeLogEntry,
+    ClaudeCommandType,
 )
 from app.models.common import BaseResponse
 from app.core.config import settings
@@ -21,22 +32,25 @@ router = APIRouter(prefix="/claude", tags=["Claude Code"])
 
 class ConftestRequest(BaseModel):
     """Conftest生成请求模型
-AI_FingerPrint_UUID: 20251225-rxbt8O1c
-"""
+    AI_FingerPrint_UUID: 20251225-rxbt8O1c
+    """
+
     test_point: str = Field(..., description="测试点描述")
     workspace: Optional[str] = Field(None, description="工作目录，默认使用项目工作目录")
 
 
 class GenerateScriptRequest(BaseModel):
     """生成测试脚本请求模型
-AI_FingerPrint_UUID: 20251225-Mk7LnQ3R
-"""
+    AI_FingerPrint_UUID: 20251225-Mk7LnQ3R
+    """
+
     device_commands: str = Field(..., description="设备命令列表（新命令）")
     script_path: str = Field(..., description="脚本文件的相对路径")
 
 
 # 任务管理器：存储task_id和WebSocket的映射
 conftest_tasks = {}
+
 
 @router.websocket("/ws/{task_id}")
 async def websocket_endpoint(websocket: WebSocket, task_id: str):
@@ -48,12 +62,17 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
 
     try:
         # 发送连接确认消息
-        await websocket.send_text(json.dumps({
-            "type": "connected",
-            "task_id": task_id,
-            "message": "WebSocket连接已建立",
-            "timestamp": datetime.now().isoformat()
-        }, ensure_ascii=False))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "connected",
+                    "task_id": task_id,
+                    "message": "WebSocket连接已建立",
+                    "timestamp": datetime.now().isoformat(),
+                },
+                ensure_ascii=False,
+            )
+        )
 
         # 创建并启动定时发送测试数据的后台任务
         test_data_task = asyncio.create_task(send_test_data())
@@ -65,10 +84,12 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
                 message = json.loads(data)
 
                 if message.get("type") == "ping":
-                    await websocket.send_text(json.dumps({
-                        "type": "pong",
-                        "timestamp": datetime.now().isoformat()
-                    }, ensure_ascii=False))
+                    await websocket.send_text(
+                        json.dumps(
+                            {"type": "pong", "timestamp": datetime.now().isoformat()},
+                            ensure_ascii=False,
+                        )
+                    )
             except WebSocketDisconnect:
                 break
             except json.JSONDecodeError:
@@ -90,6 +111,7 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
             pass
         # 取消注册WebSocket连接
         claude_service.unregister_websocket(task_id, websocket)
+
 
 @router.post("/conftest", response_model=BaseResponse)
 async def create_conftest(request: ConftestRequest, background_tasks: BackgroundTasks):
@@ -114,24 +136,30 @@ async def create_conftest(request: ConftestRequest, background_tasks: Background
         conftest_tasks[task_id] = {
             "test_point": request.test_point,
             "workspace": workspace,
-            "status": "pending"
+            "status": "pending",
         }
 
         # 添加后台任务执行生成
-        background_tasks.add_task(execute_conftest_generation, task_id, request.test_point, workspace)
+        background_tasks.add_task(
+            execute_conftest_generation, task_id, request.test_point, workspace
+        )
 
         return BaseResponse(
             status="ok",
             message="conftest生成任务已启动",
             data={
                 "task_id": task_id,
-                "websocket_url": f"/ws/claude/conftest/{task_id}"
-            }
+                "websocket_url": f"/ws/claude/conftest/{task_id}",
+            },
         )
 
     except Exception as e:
         import traceback
-        raise HTTPException(status_code=500, detail=f"创建conftest任务失败: {str(e)}\n{traceback.format_exc()}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建conftest任务失败: {str(e)}\n{traceback.format_exc()}",
+        )
 
 
 async def execute_conftest_generation(task_id: str, test_point: str, workspace: str):
@@ -139,6 +167,7 @@ async def execute_conftest_generation(task_id: str, test_point: str, workspace: 
     try:
         from app.services.cc_workflow import stream_generate_conftest_response
         import logging
+
         logger = logging.getLogger(__name__)
 
         # 更新任务状态
@@ -146,37 +175,43 @@ async def execute_conftest_generation(task_id: str, test_point: str, workspace: 
             conftest_tasks[task_id]["status"] = "running"
 
         # 调用生成函数
-        async for message in stream_generate_conftest_response(test_point=test_point, workspace=workspace):
+        async for message in stream_generate_conftest_response(
+            test_point=test_point, workspace=workspace
+        ):
             # 判断消息类型并发送到WebSocket
             message_type = type(message).__name__
 
             # 提取消息内容
             message_content = ""
-            if hasattr(message, 'content'):
+            if hasattr(message, "content"):
                 message_content = message.content
-            elif hasattr(message, 'text'):
+            elif hasattr(message, "text"):
                 message_content = message.text
-            elif hasattr(message, 'model_response'):
+            elif hasattr(message, "model_response"):
                 message_content = str(message.model_response)
             else:
                 message_content = str(message)
 
             # 判断是否是错误消息
-            is_error = getattr(message, 'error', False) if hasattr(message, 'error') else False
+            is_error = (
+                getattr(message, "error", False) if hasattr(message, "error") else False
+            )
 
             # 构造WebSocket消息
             ws_message = {
                 "status": "processing",
                 "type": message_type,
                 "data": message_content,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
             # 如果是ResultMessage（最终结果）或错误消息，标记为end状态
             if "Result" in message_type or "result" in message_type.lower() or is_error:
                 ws_message["status"] = "end"
 
-            logger.info(f"Task {task_id}: 收到消息 type={message_type}, status={ws_message['status']}")
+            logger.info(
+                f"Task {task_id}: 收到消息 type={message_type}, status={ws_message['status']}"
+            )
 
             # 发送到消息队列
             if task_id in conftest_tasks:
@@ -190,24 +225,28 @@ async def execute_conftest_generation(task_id: str, test_point: str, workspace: 
     except Exception as e:
         import traceback
         import logging
+
         logger = logging.getLogger(__name__)
         error_msg = f"生成conftest失败: {str(e)}\n{traceback.format_exc()}"
         logger.error(f"Task {task_id}: {error_msg}")
 
         if task_id in conftest_tasks:
             conftest_tasks[task_id]["status"] = "failed"
-            conftest_tasks[task_id].setdefault("messages", []).append({
-                "status": "end",
-                "type": "error",
-                "data": error_msg,
-                "timestamp": datetime.now().isoformat()
-            })
+            conftest_tasks[task_id].setdefault("messages", []).append(
+                {
+                    "status": "end",
+                    "type": "error",
+                    "data": error_msg,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
 
 @router.websocket("/conftest/{task_id}")
 async def websocket_conftest_endpoint(websocket: WebSocket, task_id: str):
     """conftest生成专用的WebSocket端点"""
     import logging
+
     logger = logging.getLogger(__name__)
 
     await websocket.accept()
@@ -215,12 +254,17 @@ async def websocket_conftest_endpoint(websocket: WebSocket, task_id: str):
 
     try:
         # 发送连接确认
-        await websocket.send_text(json.dumps({
-            "status": "connected",
-            "task_id": task_id,
-            "message": "WebSocket连接已建立",
-            "timestamp": datetime.now().isoformat()
-        }, ensure_ascii=False))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "status": "connected",
+                    "task_id": task_id,
+                    "message": "WebSocket连接已建立",
+                    "timestamp": datetime.now().isoformat(),
+                },
+                ensure_ascii=False,
+            )
+        )
 
         # 如果任务已存在，发送已缓存的消息
         if task_id in conftest_tasks and "messages" in conftest_tasks[task_id]:
@@ -244,7 +288,9 @@ async def websocket_conftest_endpoint(websocket: WebSocket, task_id: str):
                         new_messages = messages[last_sent_count:]
                         logger.info(f"发送 {len(new_messages)} 条新消息")
                         for msg in new_messages:
-                            await websocket.send_text(json.dumps(msg, ensure_ascii=False))
+                            await websocket.send_text(
+                                json.dumps(msg, ensure_ascii=False)
+                            )
 
                             # 如果是结束状态，关闭连接
                             if msg.get("status") == "end":
@@ -256,7 +302,10 @@ async def websocket_conftest_endpoint(websocket: WebSocket, task_id: str):
 
                     # 如果任务已完成且没有新消息，关闭连接
                     task_status = conftest_tasks[task_id].get("status")
-                    if task_status in ["completed", "failed"] and len(messages) == last_sent_count:
+                    if (
+                        task_status in ["completed", "failed"]
+                        and len(messages) == last_sent_count
+                    ):
                         logger.info(f"任务状态={task_status}，没有新消息，关闭连接")
                         await asyncio.sleep(0.5)  # 等待最后消息发送
                         await websocket.close()
@@ -268,10 +317,15 @@ async def websocket_conftest_endpoint(websocket: WebSocket, task_id: str):
                     message = json.loads(data)
 
                     if message.get("type") == "ping":
-                        await websocket.send_text(json.dumps({
-                            "type": "pong",
-                            "timestamp": datetime.now().isoformat()
-                        }, ensure_ascii=False))
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "type": "pong",
+                                    "timestamp": datetime.now().isoformat(),
+                                },
+                                ensure_ascii=False,
+                            )
+                        )
                 except asyncio.TimeoutError:
                     # 超时继续循环，检查新消息
                     continue
@@ -296,10 +350,11 @@ async def websocket_conftest_endpoint(websocket: WebSocket, task_id: str):
         #     del conftest_tasks[task_id]
         pass
 
+
 @router.post("/generate-script", response_model=BaseResponse)
 async def generate_test_script(
     request: GenerateScriptRequest,
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """
     根据设备命令生成测试脚本的快捷接口
@@ -312,6 +367,7 @@ async def generate_test_script(
     """
     try:
         import logging
+
         logger = logging.getLogger(__name__)
 
         # 从请求对象中获取参数
@@ -325,11 +381,17 @@ async def generate_test_script(
         workspace = settings.get_work_directory()
 
         # 构建脚本的绝对路径
-        script_full_path = os.path.join(workspace, script_path) if not os.path.isabs(script_path) else script_path
+        script_full_path = (
+            os.path.join(workspace, script_path)
+            if not os.path.isabs(script_path)
+            else script_path
+        )
 
         # 检查脚本文件是否存在
         if not os.path.exists(script_full_path):
-            raise HTTPException(status_code=404, detail=f"脚本文件不存在: {script_full_path}")
+            raise HTTPException(
+                status_code=404, detail=f"脚本文件不存在: {script_full_path}"
+            )
 
         # 获取文件名（用于从 filename_command_mapping 中查找旧命令）
         script_filename = os.path.basename(script_path)
@@ -340,13 +402,19 @@ async def generate_test_script(
             "script_filename": script_filename,
             "device_commands": device_commands,
             "status": "pending",
-            "stage": "pending"
+            "stage": "pending",
         }
 
         logger.info(f"创建generate-script任务: task_id={task_id}, script={script_path}")
 
         # 添加后台任务执行完整流程（脚本回写 + 拷贝 + ITC run）
-        background_tasks.add_task(execute_full_pipeline, task_id, script_full_path, script_filename, device_commands)
+        background_tasks.add_task(
+            execute_full_pipeline,
+            task_id,
+            script_full_path,
+            script_filename,
+            device_commands,
+        )
 
         return BaseResponse(
             status="ok",
@@ -355,22 +423,26 @@ async def generate_test_script(
                 "task_id": task_id,
                 "websocket_url": f"/api/v1/claude/ws/{task_id}",
                 "script_path": script_path,
-                "script_full_path": script_full_path
-            }
+                "script_full_path": script_full_path,
+            },
         )
 
     except HTTPException:
         raise
     except Exception as e:
         import traceback
+
         logger = logging.getLogger(__name__)
         logger.error(f"创建generate-script任务失败: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"创建generate-script任务失败: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"创建generate-script任务失败: {str(e)}"
+        )
+
 
 @router.post("/prompt", response_model=BaseResponse)
 async def execute_custom_command(
     prompt: str = Query(..., description="claude用户输入"),
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """
     执行完整的自动化测试流程：
@@ -382,6 +454,7 @@ async def execute_custom_command(
     """
     try:
         import logging
+
         logger = logging.getLogger(__name__)
 
         # 生成唯一任务ID
@@ -389,14 +462,14 @@ async def execute_custom_command(
 
         # 使用默认工作目录
         workspace = settings.get_work_directory()
-        #prompt = "测试BGP IPv4地址族发送的静态路由 \n前置背景：\nDUT1和DUT2使用物理口地址建立直连IBGP邻居，DUT1建立静态路由\n测试步骤：\n1、DUT1 bgp发布静态路由，DUT2上检查BGP接收到对应路由"
+        # prompt = "测试BGP IPv4地址族发送的静态路由 \n前置背景：\nDUT1和DUT2使用物理口地址建立直连IBGP邻居，DUT1建立静态路由\n测试步骤：\n1、DUT1 bgp发布静态路由，DUT2上检查BGP接收到对应路由"
 
         # 存储任务信息
         conftest_tasks[task_id] = {
             "test_point": prompt,
             "workspace": workspace,
             "status": "pending",
-            "stage": "pending"  # 新增：记录当前阶段
+            "stage": "pending",  # 新增：记录当前阶段
         }
 
         logger.info(f"创建prompt任务: task_id={task_id}, test_point={prompt[:50]}...")
@@ -410,18 +483,18 @@ async def execute_custom_command(
             data={
                 "task_id": task_id,
                 "websocket_url": f"/ws/claude/prompt/{task_id}",
-                "stages": [
-                    "conftest生成",
-                    "测试脚本生成",
-                    "ITC脚本执行"
-                ]
-            }
+                "stages": ["conftest生成", "测试脚本生成", "ITC脚本执行"],
+            },
         )
 
     except Exception as e:
         import traceback
+
         logger.error(f"创建prompt任务失败: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"创建prompt任务失败: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建prompt任务失败: {str(e)}\n{traceback.format_exc()}",
+        )
 
 
 async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str):
@@ -432,9 +505,12 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
     3. 调用 ITC run 接口执行脚本
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
-    def send_message(message_type: str, data: str, status: str = "processing", stage: str = ""):
+    def send_message(
+        message_type: str, data: str, status: str = "processing", stage: str = ""
+    ):
         """发送消息到WebSocket消息队列"""
         try:
             ws_message = {
@@ -442,12 +518,14 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                 "type": message_type,
                 "data": data,
                 "stage": stage,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
             if task_id in conftest_tasks:
                 conftest_tasks[task_id].setdefault("messages", []).append(ws_message)
-                logger.info(f"Task {task_id} [{stage}]: {message_type} - {data[:100]}...")
+                logger.info(
+                    f"Task {task_id} [{stage}]: {message_type} - {data[:100]}..."
+                )
             else:
                 logger.warning(f"Task {task_id}: 任务不存在，无法发送消息")
         except Exception as e:
@@ -464,30 +542,41 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
     try:
         # 更新任务状态为运行中
         update_task_status("running", "conftest生成")
-        send_message("info", f"开始执行自动化测试流程\n测试点: {test_point[:100]}...", "processing", "conftest生成")
+        send_message(
+            "info",
+            f"开始执行自动化测试流程\n测试点: {test_point[:100]}...",
+            "processing",
+            "conftest生成",
+        )
 
         # ========== 阶段1: 生成 conftest.py ==========
         logger.info(f"Task {task_id}: 开始生成 conftest.py")
-        send_message("info", "===== 阶段1: 生成 conftest.py =====", "processing", "conftest生成")
+        send_message(
+            "info", "===== 阶段1: 生成 conftest.py =====", "processing", "conftest生成"
+        )
 
         from app.services.cc_workflow import stream_generate_conftest_response
 
-        async for message in stream_generate_conftest_response(test_point=test_point, workspace=workspace):
+        async for message in stream_generate_conftest_response(
+            test_point=test_point, workspace=workspace
+        ):
             message_type = type(message).__name__
 
             # 提取消息内容
             message_content = ""
-            if hasattr(message, 'content'):
+            if hasattr(message, "content"):
                 message_content = message.content
-            elif hasattr(message, 'text'):
+            elif hasattr(message, "text"):
                 message_content = message.text
-            elif hasattr(message, 'model_response'):
+            elif hasattr(message, "model_response"):
                 message_content = str(message.model_response)
             else:
                 message_content = str(message)
 
             # 判断是否是错误消息
-            is_error = getattr(message, 'error', False) if hasattr(message, 'error') else False
+            is_error = (
+                getattr(message, "error", False) if hasattr(message, "error") else False
+            )
 
             # 判断是否是结果消息
             is_result = "Result" in message_type or "result" in message_type.lower()
@@ -498,7 +587,9 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
             if is_error:
                 update_task_status("failed", "conftest生成")
-                send_message("error", "conftest.py生成失败，终止流程", "end", "conftest生成")
+                send_message(
+                    "error", "conftest.py生成失败，终止流程", "end", "conftest生成"
+                )
                 return
 
         logger.info(f"Task {task_id}: conftest.py 生成完成")
@@ -518,26 +609,30 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
             # 需要过滤的目录（虚拟环境、缓存、版本控制等）
             filtered_dirs = {
-                'ke',           # KE 目录
-                'venv',         # 虚拟环境
-                '.venv',        # 虚拟环境
-                'env',          # 虚拟环境
-                '.env',         # 虚拟环境
-                '__pycache__',  # Python 缓存
-                '.git',         # Git 版本控制
-                '.svn',         # SVN 版本控制
-                'node_modules', # Node.js 模块
-                '.pytest_cache',# pytest 缓存
-                'dist',         # 构建目录
-                'build',        # 构建目录
-                '.tox',         # tox 测试环境
-                '.eggs',        # eggs 目录
-                '*.egg-info',   # egg-info 目录
+                "ke",  # KE 目录
+                "venv",  # 虚拟环境
+                ".venv",  # 虚拟环境
+                "env",  # 虚拟环境
+                ".env",  # 虚拟环境
+                "__pycache__",  # Python 缓存
+                ".git",  # Git 版本控制
+                ".svn",  # SVN 版本控制
+                "node_modules",  # Node.js 模块
+                ".pytest_cache",  # pytest 缓存
+                "dist",  # 构建目录
+                "build",  # 构建目录
+                ".tox",  # tox 测试环境
+                ".eggs",  # eggs 目录
+                "*.egg-info",  # egg-info 目录
             }
 
             for root, dirs, files in os.walk(workspace):
                 # 过滤掉不需要的目录（大小写不敏感）
-                dirs[:] = [d for d in dirs if d.lower() not in filtered_dirs and not d.startswith('.')]
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if d.lower() not in filtered_dirs and not d.startswith(".")
+                ]
 
                 # 安全检查：确保只在工作目录内查找
                 root_realpath = os.path.realpath(root)
@@ -563,22 +658,43 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                     os.chmod(target_conftest, 0o777)
                     os.chmod(target_dir, 0o777)
                 except PermissionError:
-                    logger.warning(f"Task {task_id}: 权限不足，无法设置文件权限 {target_conftest}，但文件已成功拷贝")
+                    logger.warning(
+                        f"Task {task_id}: 权限不足，无法设置文件权限 {target_conftest}，但文件已成功拷贝"
+                    )
 
                 logger.info(f"Task {task_id}: conftest.py 已拷贝到 {target_conftest}")
-                send_message("info", f"✓ conftest.py 已备份到: {target_conftest}", "processing", "conftest生成")
+                send_message(
+                    "info",
+                    f"✓ conftest.py 已备份到: {target_conftest}",
+                    "processing",
+                    "conftest生成",
+                )
             else:
-                logger.warning(f"Task {task_id}: 在 {workspace} 中未找到 conftest.py 文件")
-                send_message("warning", f"⚠ 未找到 conftest.py 文件，跳过备份", "processing", "conftest生成")
+                logger.warning(
+                    f"Task {task_id}: 在 {workspace} 中未找到 conftest.py 文件"
+                )
+                send_message(
+                    "warning",
+                    f"⚠ 未找到 conftest.py 文件，跳过备份",
+                    "processing",
+                    "conftest生成",
+                )
 
         except Exception as e:
             logger.error(f"Task {task_id}: 拷贝 conftest.py 失败: {str(e)}")
-            send_message("warning", f"⚠ 备份 conftest.py 失败: {str(e)}，继续执行后续流程", "processing", "conftest生成")
+            send_message(
+                "warning",
+                f"⚠ 备份 conftest.py 失败: {str(e)}，继续执行后续流程",
+                "processing",
+                "conftest生成",
+            )
 
         # ========== 阶段2: 生成测试脚本 ==========
         logger.info(f"Task {task_id}: 开始生成测试脚本")
         update_task_status("running", "测试脚本生成")
-        send_message("info", "\n===== 阶段2: 生成测试脚本 =====", "processing", "测试脚本生成")
+        send_message(
+            "info", "\n===== 阶段2: 生成测试脚本 =====", "processing", "测试脚本生成"
+        )
 
         # 生成前：记录工作目录中已存在的测试脚本文件
         existing_scripts_before = set()
@@ -586,27 +702,31 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
         # 需要过滤的目录（虚拟环境、缓存、版本控制等）
         filtered_dirs = {
-            'ke',           # KE 目录
-            'venv',         # 虚拟环境
-            '.venv',        # 虚拟环境
-            'env',          # 虚拟环境
-            '.env',         # 虚拟环境
-            '__pycache__',  # Python 缓存
-            '.git',         # Git 版本控制
-            '.svn',         # SVN 版本控制
-            'node_modules', # Node.js 模块
-            '.pytest_cache',# pytest 缓存
-            'dist',         # 构建目录
-            'build',        # 构建目录
-            '.tox',         # tox 测试环境
-            '.eggs',        # eggs 目录
-            '*.egg-info',   # egg-info 目录
+            "ke",  # KE 目录
+            "venv",  # 虚拟环境
+            ".venv",  # 虚拟环境
+            "env",  # 虚拟环境
+            ".env",  # 虚拟环境
+            "__pycache__",  # Python 缓存
+            ".git",  # Git 版本控制
+            ".svn",  # SVN 版本控制
+            "node_modules",  # Node.js 模块
+            ".pytest_cache",  # pytest 缓存
+            "dist",  # 构建目录
+            "build",  # 构建目录
+            ".tox",  # tox 测试环境
+            ".eggs",  # eggs 目录
+            "*.egg-info",  # egg-info 目录
         }
 
         try:
             for root, dirs, files in os.walk(workspace):
                 # 过滤掉不需要的目录（大小写不敏感）
-                dirs[:] = [d for d in dirs if d.lower() not in filtered_dirs and not d.startswith('.')]
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if d.lower() not in filtered_dirs and not d.startswith(".")
+                ]
 
                 # 安全检查：确保只在工作目录内查找
                 root_realpath = os.path.realpath(root)
@@ -617,38 +737,48 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                 for file in files:
                     # 只查找以 test_ 开头的 .py 文件（测试脚本）
                     # 排除 conftest.py, __init__.py 和项目代码文件（如 _*.py）
-                    if (file.startswith('test_') and
-                        file.endswith('.py') and
-                        file not in ['conftest.py', '__init__.py']):
+                    if (
+                        file.startswith("test_")
+                        and file.endswith(".py")
+                        and file not in ["conftest.py", "__init__.py"]
+                    ):
                         # 使用完整路径，避免不同目录下的同名文件冲突
                         full_path = os.path.join(root, file)
                         existing_scripts_before.add(full_path)
 
-            logger.info(f"Task {task_id}: 生成前已有测试脚本数量: {len(existing_scripts_before)}")
+            logger.info(
+                f"Task {task_id}: 生成前已有测试脚本数量: {len(existing_scripts_before)}"
+            )
             if existing_scripts_before:
                 sample_scripts = list(existing_scripts_before)[:3]
-                logger.info(f"Task {task_id}: 生成前已有测试脚本示例: {[os.path.basename(p) for p in sample_scripts]}")
+                logger.info(
+                    f"Task {task_id}: 生成前已有测试脚本示例: {[os.path.basename(p) for p in sample_scripts]}"
+                )
         except Exception as e:
             logger.warning(f"Task {task_id}: 扫描已有测试脚本失败: {str(e)}")
 
         from app.services.cc_workflow import stream_test_script_response
 
-        async for message in stream_test_script_response(test_point=test_point, workspace=workspace):
+        async for message in stream_test_script_response(
+            test_point=test_point, workspace=workspace
+        ):
             message_type = type(message).__name__
 
             # 提取消息内容
             message_content = ""
-            if hasattr(message, 'content'):
+            if hasattr(message, "content"):
                 message_content = message.content
-            elif hasattr(message, 'text'):
+            elif hasattr(message, "text"):
                 message_content = message.text
-            elif hasattr(message, 'model_response'):
+            elif hasattr(message, "model_response"):
                 message_content = str(message.model_response)
             else:
                 message_content = str(message)
 
             # 判断是否是错误消息
-            is_error = getattr(message, 'error', False) if hasattr(message, 'error') else False
+            is_error = (
+                getattr(message, "error", False) if hasattr(message, "error") else False
+            )
 
             # 判断是否是结果消息
             is_result = "Result" in message_type or "result" in message_type.lower()
@@ -659,7 +789,9 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
             if is_error:
                 update_task_status("failed", "测试脚本生成")
-                send_message("error", "测试脚本生成失败，终止流程", "end", "测试脚本生成")
+                send_message(
+                    "error", "测试脚本生成失败，终止流程", "end", "测试脚本生成"
+                )
                 return
 
         logger.info(f"Task {task_id}: 测试脚本生成完成")
@@ -675,21 +807,21 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
             # 需要过滤的目录（虚拟环境、缓存、版本控制等）
             filtered_dirs = {
-                'ke',           # KE 目录
-                'venv',         # 虚拟环境
-                '.venv',        # 虚拟环境
-                'env',          # 虚拟环境
-                '.env',         # 虚拟环境
-                '__pycache__',  # Python 缓存
-                '.git',         # Git 版本控制
-                '.svn',         # SVN 版本控制
-                'node_modules', # Node.js 模块
-                '.pytest_cache',# pytest 缓存
-                'dist',         # 构建目录
-                'build',        # 构建目录
-                '.tox',         # tox 测试环境
-                '.eggs',        # eggs 目录
-                '*.egg-info',   # egg-info 目录
+                "ke",  # KE 目录
+                "venv",  # 虚拟环境
+                ".venv",  # 虚拟环境
+                "env",  # 虚拟环境
+                ".env",  # 虚拟环境
+                "__pycache__",  # Python 缓存
+                ".git",  # Git 版本控制
+                ".svn",  # SVN 版本控制
+                "node_modules",  # Node.js 模块
+                ".pytest_cache",  # pytest 缓存
+                "dist",  # 构建目录
+                "build",  # 构建目录
+                ".tox",  # tox 测试环境
+                ".eggs",  # eggs 目录
+                "*.egg-info",  # egg-info 目录
             }
 
             # 生成后：扫描工作目录，找出新增的测试脚本文件
@@ -698,7 +830,11 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
             for root, dirs, files in os.walk(workspace):
                 # 过滤掉不需要的目录（大小写不敏感）
-                dirs[:] = [d for d in dirs if d.lower() not in filtered_dirs and not d.startswith('.')]
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if d.lower() not in filtered_dirs and not d.startswith(".")
+                ]
 
                 # 安全检查：确保只在工作目录内查找
                 root_realpath = os.path.realpath(root)
@@ -709,9 +845,11 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                 for file in files:
                     # 只查找以 test_ 开头的 .py 文件（测试脚本）
                     # 排除 conftest.py, __init__.py 和项目代码文件（如 _*.py）
-                    if (file.startswith('test_') and
-                        file.endswith('.py') and
-                        file not in ['conftest.py', '__init__.py']):
+                    if (
+                        file.startswith("test_")
+                        and file.endswith(".py")
+                        and file not in ["conftest.py", "__init__.py"]
+                    ):
                         # 使用完整路径
                         full_path = os.path.join(root, file)
                         all_scripts_after.add(full_path)
@@ -719,9 +857,13 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                         if full_path not in existing_scripts_before:
                             new_scripts.append(full_path)
 
-            logger.info(f"Task {task_id}: 生成后所有测试脚本数量: {len(all_scripts_after)}")
+            logger.info(
+                f"Task {task_id}: 生成后所有测试脚本数量: {len(all_scripts_after)}"
+            )
             logger.info(f"Task {task_id}: 本次新增测试脚本数量: {len(new_scripts)}")
-            logger.info(f"Task {task_id}: 本次新增测试脚本: {[os.path.basename(f) for f in new_scripts]}")
+            logger.info(
+                f"Task {task_id}: 本次新增测试脚本: {[os.path.basename(f) for f in new_scripts]}"
+            )
 
             if new_scripts:
                 # 只拷贝本次生成的测试脚本文件
@@ -738,31 +880,56 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                         os.chmod(target_script, 0o777)
                         os.chmod(target_dir, 0o777)
                     except PermissionError:
-                        logger.warning(f"Task {task_id}: 权限不足，无法设置文件权限 {target_script}，但文件已成功拷贝")
+                        logger.warning(
+                            f"Task {task_id}: 权限不足，无法设置文件权限 {target_script}，但文件已成功拷贝"
+                        )
 
                     copied_count += 1
                     logger.info(f"Task {task_id}: {filename} 已拷贝到 {target_script}")
 
-                send_message("info", f"✓ 已备份 {copied_count} 个新生成的测试脚本到: {target_dir}", "processing", "测试脚本生成")
+                send_message(
+                    "info",
+                    f"✓ 已备份 {copied_count} 个新生成的测试脚本到: {target_dir}",
+                    "processing",
+                    "测试脚本生成",
+                )
             else:
                 logger.warning(f"Task {task_id}: 未检测到新生成的测试脚本文件")
-                send_message("warning", f"⚠ 未检测到新生成的测试脚本，跳过备份", "processing", "测试脚本生成")
+                send_message(
+                    "warning",
+                    f"⚠ 未检测到新生成的测试脚本，跳过备份",
+                    "processing",
+                    "测试脚本生成",
+                )
 
         except Exception as e:
             logger.error(f"Task {task_id}: 拷贝测试脚本失败: {str(e)}")
-            send_message("warning", f"⚠ 备份测试脚本失败: {str(e)}，继续执行后续流程", "processing", "测试脚本生成")
+            send_message(
+                "warning",
+                f"⚠ 备份测试脚本失败: {str(e)}，继续执行后续流程",
+                "processing",
+                "测试脚本生成",
+            )
 
         # ========== 阶段3: 调用 ITC run 接口执行脚本 ==========
         logger.info(f"Task {task_id}: 开始调用 ITC run 接口")
         update_task_status("running", "ITC脚本执行")
-        send_message("info", "\n===== 阶段3: 执行测试脚本 =====", "processing", "ITC脚本执行")
+        send_message(
+            "info", "\n===== 阶段3: 执行测试脚本 =====", "processing", "ITC脚本执行"
+        )
 
         # 获取 executorip
         from app.core.config import settings
+
         executorip = settings.get_deploy_executor_ip()
 
         if not executorip:
-            send_message("error", "未找到部署的执行机IP，请先调用 /deploy 接口部署环境", "end", "ITC脚本执行")
+            send_message(
+                "error",
+                "未找到部署的执行机IP，请先调用 /deploy 接口部署环境",
+                "end",
+                "ITC脚本执行",
+            )
             update_task_status("failed", "ITC脚本执行")
             return
 
@@ -770,6 +937,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
         # 构造脚本路径（根据实际情况调整）
         import getpass
+
         username = getpass.getuser()
         scriptspath = f"//10.144.41.149/webide/aigc_tool/{username}"
 
@@ -780,10 +948,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         from app.services.itc.itc_service import itc_service
         from app.models.itc.itc_models import RunScriptRequest
 
-        itc_request = RunScriptRequest(
-            scriptspath=scriptspath,
-            executorip=executorip
-        )
+        itc_request = RunScriptRequest(scriptspath=scriptspath, executorip=executorip)
 
         # 执行 ITC run（带异常保护）
         try:
@@ -794,7 +959,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
             result = {
                 "return_code": "500",
                 "return_info": f"ITC run 调用异常: {str(e)}",
-                "result": None
+                "result": None,
             }
 
         # 记录返回结果（带异常保护）
@@ -806,10 +971,17 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         # 发送结果消息（带异常保护）
         try:
             result_message = return_code_to_message(result)
-            send_message("info", f"\nITC run 接口返回结果:\n{result_message}", "end", "ITC脚本执行")
+            send_message(
+                "info",
+                f"\nITC run 接口返回结果:\n{result_message}",
+                "end",
+                "ITC脚本执行",
+            )
         except Exception as e:
             logger.error(f"Task {task_id}: 发送 ITC 结果消息失败: {str(e)}")
-            send_message("warning", "ITC run 执行完成，但结果解析失败", "end", "ITC脚本执行")
+            send_message(
+                "warning", "ITC run 执行完成，但结果解析失败", "end", "ITC脚本执行"
+            )
 
         # 更新任务状态为完成
         update_task_status("completed", "ITC脚本执行")
@@ -817,7 +989,10 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
     except Exception as e:
         import traceback
-        error_msg = f"自动化测试流程执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
+
+        error_msg = (
+            f"自动化测试流程执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
+        )
         logger.error(f"Task {task_id}: {error_msg}")
 
         update_task_status("failed")
@@ -827,6 +1002,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 def return_code_to_message(result: dict) -> str:
     """将ITC返回结果转换为可读消息"""
     import logging
+
     logger = logging.getLogger(__name__)
 
     try:
@@ -851,6 +1027,7 @@ def return_code_to_message(result: dict) -> str:
 async def websocket_prompt_endpoint(websocket: WebSocket, task_id: str):
     """prompt流程专用的WebSocket端点"""
     import logging
+
     logger = logging.getLogger(__name__)
 
     await websocket.accept()
@@ -858,12 +1035,17 @@ async def websocket_prompt_endpoint(websocket: WebSocket, task_id: str):
 
     try:
         # 发送连接确认
-        await websocket.send_text(json.dumps({
-            "status": "connected",
-            "task_id": task_id,
-            "message": "WebSocket连接已建立",
-            "timestamp": datetime.now().isoformat()
-        }, ensure_ascii=False))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "status": "connected",
+                    "task_id": task_id,
+                    "message": "WebSocket连接已建立",
+                    "timestamp": datetime.now().isoformat(),
+                },
+                ensure_ascii=False,
+            )
+        )
 
         # 如果任务已存在，发送已缓存的消息
         if task_id in conftest_tasks and "messages" in conftest_tasks[task_id]:
@@ -887,7 +1069,9 @@ async def websocket_prompt_endpoint(websocket: WebSocket, task_id: str):
                         new_messages = messages[last_sent_count:]
                         logger.info(f"发送 {len(new_messages)} 条新消息")
                         for msg in new_messages:
-                            await websocket.send_text(json.dumps(msg, ensure_ascii=False))
+                            await websocket.send_text(
+                                json.dumps(msg, ensure_ascii=False)
+                            )
 
                             # 如果是结束状态，关闭连接
                             if msg.get("status") == "end":
@@ -899,7 +1083,10 @@ async def websocket_prompt_endpoint(websocket: WebSocket, task_id: str):
 
                     # 如果任务已完成且没有新消息，关闭连接
                     task_status = conftest_tasks[task_id].get("status")
-                    if task_status in ["completed", "failed"] and len(messages) == last_sent_count:
+                    if (
+                        task_status in ["completed", "failed"]
+                        and len(messages) == last_sent_count
+                    ):
                         logger.info(f"任务状态={task_status}，没有新消息，关闭连接")
                         await asyncio.sleep(0.5)  # 等待最后消息发送
                         await websocket.close()
@@ -911,10 +1098,15 @@ async def websocket_prompt_endpoint(websocket: WebSocket, task_id: str):
                     message = json.loads(data)
 
                     if message.get("type") == "ping":
-                        await websocket.send_text(json.dumps({
-                            "type": "pong",
-                            "timestamp": datetime.now().isoformat()
-                        }, ensure_ascii=False))
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "type": "pong",
+                                    "timestamp": datetime.now().isoformat(),
+                                },
+                                ensure_ascii=False,
+                            )
+                        )
                 except asyncio.TimeoutError:
                     # 超时继续循环，检查新消息
                     continue
@@ -937,7 +1129,9 @@ async def websocket_prompt_endpoint(websocket: WebSocket, task_id: str):
         pass
 
 
-async def execute_script_write_back(task_id: str, script_full_path: str, script_filename: str, device_commands: str):
+async def execute_script_write_back(
+    task_id: str, script_full_path: str, script_filename: str, device_commands: str
+):
     """
     后台执行脚本生成和回写任务
 
@@ -960,7 +1154,7 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
             "status": status,
             "type": message_type,
             "data": data,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         if task_id in conftest_tasks:
@@ -987,13 +1181,17 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
         old_command = None
         if script_filename in filename_command_mapping:
             old_command = filename_command_mapping[script_filename]
-            send_message("info", f"✓ 找到旧命令（长度: {len(old_command)} 字符）", "processing")
+            send_message(
+                "info", f"✓ 找到旧命令（长度: {len(old_command)} 字符）", "processing"
+            )
         else:
             # 尝试模糊匹配
             for key, value in filename_command_mapping.items():
                 if script_filename in key or key in script_filename:
                     old_command = value
-                    send_message("info", f"✓ 通过模糊匹配找到旧命令（key: {key}）", "processing")
+                    send_message(
+                        "info", f"✓ 通过模糊匹配找到旧命令（key: {key}）", "processing"
+                    )
                     break
 
         if not old_command:
@@ -1010,13 +1208,13 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
 
         # 保存旧命令到临时文件
         old_command_file = os.path.join(temp_dir, "old_command.md")
-        with open(old_command_file, 'w', encoding='utf-8') as f:
+        with open(old_command_file, "w", encoding="utf-8") as f:
             f.write(old_command)
         send_message("info", f"✓ 旧命令已保存到临时文件", "processing")
 
         # 保存新命令到临时文件
         new_command_file = os.path.join(temp_dir, "new_command.md")
-        with open(new_command_file, 'w', encoding='utf-8') as f:
+        with open(new_command_file, "w", encoding="utf-8") as f:
             f.write(device_commands)
         send_message("info", f"✓ 新命令已保存到临时文件", "processing")
 
@@ -1025,7 +1223,13 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
         send_message("info", "===== 第3步：执行脚本回写 =====", "processing")
 
         # 导入 command_write_back 模块
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../services/claude/process_script_write_back"))
+        sys.path.insert(
+            0,
+            os.path.join(
+                os.path.dirname(__file__),
+                "../services/claude/process_script_write_back",
+            ),
+        )
         import command_write_back
 
         # 保存旧的 sys.argv
@@ -1037,7 +1241,7 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
                 "command_write_back.py",
                 script_full_path,  # 参数1：脚本文件路径
                 old_command_file,  # 参数2：旧命令文件
-                new_command_file   # 参数3：新命令文件
+                new_command_file,  # 参数3：新命令文件
             ]
 
             logger.info(f"Task {task_id}: 调用参数: {sys.argv}")
@@ -1047,6 +1251,7 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
 
             # 由于 command_write_back.main() 是同步函数，我们在线程池中运行它
             import concurrent.futures
+
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, command_write_back.main)
 
@@ -1060,11 +1265,11 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
         logger.info(f"Task {task_id}: 清理临时文件")
         send_message("info", "===== 第4步：清理临时文件 =====", "processing")
 
-       
-
         # ========== 第5步：拷贝修改后的脚本到目标目录 ==========
         logger.info(f"Task {task_id}: 拷贝修改后的脚本到目标目录")
-        send_message("info", "===== 第5步：拷贝修改后的脚本到目标目录 =====", "processing")
+        send_message(
+            "info", "===== 第5步：拷贝修改后的脚本到目标目录 =====", "processing"
+        )
 
         import getpass
         import glob
@@ -1089,9 +1294,13 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
                 os.chmod(target_script_path, 0o777)
                 os.chmod(target_dir, 0o777)
             except PermissionError:
-                logger.warning(f"Task {task_id}: 权限不足，无法设置文件权限，但文件已成功拷贝")
+                logger.warning(
+                    f"Task {task_id}: 权限不足，无法设置文件权限，但文件已成功拷贝"
+                )
 
-            send_message("info", f"✓ 修改后的脚本已拷贝到: {target_script_path}", "processing")
+            send_message(
+                "info", f"✓ 修改后的脚本已拷贝到: {target_script_path}", "processing"
+            )
             logger.info(f"Task {task_id}: 脚本已拷贝到 {target_script_path}")
         except Exception as e:
             logger.error(f"Task {task_id}: 拷贝脚本失败: {str(e)}")
@@ -1104,7 +1313,10 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
 
     except Exception as e:
         import traceback
-        error_msg = f"脚本回写任务执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
+
+        error_msg = (
+            f"脚本回写任务执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
+        )
         logger.error(f"Task {task_id}: {error_msg}")
 
         update_task_status("failed")
@@ -1132,7 +1344,7 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
             "status": status,
             "type": message_type,
             "data": data,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         if task_id in conftest_tasks:
@@ -1181,21 +1393,38 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
 
         # 查找并拷贝项目工作区的 conftest.py
         from app.core.config import settings
+
         workspace = settings.get_work_directory()
         workspace_realpath = os.path.realpath(workspace)
         conftest_file = None
 
         # 需要过滤的目录
         filtered_dirs = {
-            'ke', 'venv', '.venv', 'env', '.env', '__pycache__',
-            '.git', '.svn', 'node_modules', '.pytest_cache',
-            'dist', 'build', '.tox', '.eggs', '*.egg-info',
+            "ke",
+            "venv",
+            ".venv",
+            "env",
+            ".env",
+            "__pycache__",
+            ".git",
+            ".svn",
+            "node_modules",
+            ".pytest_cache",
+            "dist",
+            "build",
+            ".tox",
+            ".eggs",
+            "*.egg-info",
         }
 
         # 优先从项目工作区根目录查找 conftest.py（只查找顶层，不递归）
         for item in os.listdir(workspace):
             item_path = os.path.join(workspace, item)
-            if os.path.isfile(item_path) and item.startswith('conftest') and item.endswith('.py'):
+            if (
+                os.path.isfile(item_path)
+                and item.startswith("conftest")
+                and item.endswith(".py")
+            ):
                 # 确认不是过滤目录中的文件
                 conftest_file = item_path
                 break
@@ -1214,7 +1443,11 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
                     break
 
         if conftest_file:
-            send_message("info", f"✓ 找到工作区 conftest.py: {os.path.basename(conftest_file)}", "processing")
+            send_message(
+                "info",
+                f"✓ 找到工作区 conftest.py: {os.path.basename(conftest_file)}",
+                "processing",
+            )
             logger.info(f"Task {task_id}: 从工作区找到 conftest.py: {conftest_file}")
         else:
             # 工作区未找到，尝试在脚本所在目录查找
@@ -1227,10 +1460,16 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
                 match_realpath = os.path.realpath(matches[0])
                 if match_realpath.startswith(workspace_realpath):
                     conftest_file = matches[0]
-                    send_message("info", f"✓ 找到 conftest.py（脚本所在目录）", "processing")
-                    logger.info(f"Task {task_id}: 从脚本目录找到 conftest.py: {conftest_file}")
+                    send_message(
+                        "info", f"✓ 找到 conftest.py（脚本所在目录）", "processing"
+                    )
+                    logger.info(
+                        f"Task {task_id}: 从脚本目录找到 conftest.py: {conftest_file}"
+                    )
                 else:
-                    logger.warning(f"Task {task_id}: conftest.py 不在工作目录内，跳过: {matches[0]}")
+                    logger.warning(
+                        f"Task {task_id}: conftest.py 不在工作目录内，跳过: {matches[0]}"
+                    )
             else:
                 send_message("warning", "⚠ 未找到 conftest.py 文件", "processing")
 
@@ -1243,7 +1482,7 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
         # 创建 __init__.py（如果不存在）
         init_file = os.path.join(target_dir, "__init__.py")
         if not os.path.exists(init_file):
-            open(init_file, 'a').close()
+            open(init_file, "a").close()
             send_message("info", f"✓ __init__.py 已创建", "processing")
 
         # 设置目录权限为 777
@@ -1273,9 +1512,18 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
         # 执行权限设置，即使失败也不影响后续流程
         permission_errors = set_permissions_recursive(target_dir, 0o777)
         if permission_errors:
-            send_message("warning", f"⚠ 部分文件权限设置失败（但不影响后续执行）:\n" + "\n".join(permission_errors[:5]), "processing")
+            send_message(
+                "warning",
+                f"⚠ 部分文件权限设置失败（但不影响后续执行）:\n"
+                + "\n".join(permission_errors[:5]),
+                "processing",
+            )
             if len(permission_errors) > 5:
-                send_message("warning", f"... 还有 {len(permission_errors) - 5} 个文件权限设置失败", "processing")
+                send_message(
+                    "warning",
+                    f"... 还有 {len(permission_errors) - 5} 个文件权限设置失败",
+                    "processing",
+                )
         else:
             send_message("info", f"✓ 目录权限已设置", "processing")
 
@@ -1285,10 +1533,13 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
 
         # 获取 executorip
         from app.core.config import settings
+
         executorip = settings.get_deploy_executor_ip()
 
         if not executorip:
-            send_message("error", "未找到部署的执行机IP，请先调用 /deploy 接口部署环境", "end")
+            send_message(
+                "error", "未找到部署的执行机IP，请先调用 /deploy 接口部署环境", "end"
+            )
             update_task_status("failed")
             return
 
@@ -1302,13 +1553,12 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
         from app.services.itc.itc_service import itc_service
         from app.models.itc.itc_models import RunScriptRequest
 
-        itc_request = RunScriptRequest(
-            scriptspath=unc_path,
-            executorip=executorip
-        )
+        itc_request = RunScriptRequest(scriptspath=unc_path, executorip=executorip)
 
         send_message("info", "正在调用 ITC run 接口，请稍候...", "processing")
-        logger.info(f"Task {task_id}: 调用 ITC run 接口: scriptspath={unc_path}, executorip={executorip}")
+        logger.info(
+            f"Task {task_id}: 调用 ITC run 接口: scriptspath={unc_path}, executorip={executorip}"
+        )
 
         # 执行 ITC run
         result = await itc_service.run_script(itc_request)
@@ -1334,13 +1584,18 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
 
     except Exception as e:
         import traceback
-        error_msg = f"拷贝和执行脚本失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
+
+        error_msg = (
+            f"拷贝和执行脚本失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
+        )
         logger.error(f"Task {task_id}: {error_msg}")
         update_task_status("failed")
         send_message("error", error_msg, "end")
 
 
-async def execute_full_pipeline(task_id: str, script_full_path: str, script_filename: str, device_commands: str):
+async def execute_full_pipeline(
+    task_id: str, script_full_path: str, script_filename: str, device_commands: str
+):
     """
     执行完整的自动化流程：脚本回写 -> 拷贝脚本 -> ITC run
 
@@ -1351,6 +1606,7 @@ async def execute_full_pipeline(task_id: str, script_full_path: str, script_file
         device_commands: 用户输入的新命令内容
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     def send_message(message_type: str, data: str, status: str = "processing"):
@@ -1359,7 +1615,7 @@ async def execute_full_pipeline(task_id: str, script_full_path: str, script_file
             "status": status,
             "type": message_type,
             "data": data,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         if task_id in conftest_tasks:
@@ -1369,7 +1625,9 @@ async def execute_full_pipeline(task_id: str, script_full_path: str, script_file
     try:
         # 第1步：执行脚本回写
         logger.info(f"Task {task_id}: 开始执行脚本回写")
-        await execute_script_write_back(task_id, script_full_path, script_filename, device_commands)
+        await execute_script_write_back(
+            task_id, script_full_path, script_filename, device_commands
+        )
 
         # 等待一小段时间，确保最后的消息被发送
         await asyncio.sleep(0.5)
@@ -1387,7 +1645,10 @@ async def execute_full_pipeline(task_id: str, script_full_path: str, script_file
 
     except Exception as e:
         import traceback
-        logger.error(f"Task {task_id}: 完整流程执行失败: {str(e)}\n{traceback.format_exc()}")
+
+        logger.error(
+            f"Task {task_id}: 完整流程执行失败: {str(e)}\n{traceback.format_exc()}"
+        )
 
         # 发送错误消息
         send_message("error", f"完整流程执行失败: {str(e)}", "end")
@@ -1397,19 +1658,27 @@ async def execute_full_pipeline(task_id: str, script_full_path: str, script_file
 async def websocket_generate_script_endpoint(websocket: WebSocket, task_id: str):
     """generate-script任务专用的WebSocket端点"""
     import logging
+
     logger = logging.getLogger(__name__)
 
     await websocket.accept()
-    logger.info(f"WebSocket连接已建立: task_id={task_id}, endpoint=/generate-script/{task_id}")
+    logger.info(
+        f"WebSocket连接已建立: task_id={task_id}, endpoint=/generate-script/{task_id}"
+    )
 
     try:
         # 发送连接确认
-        await websocket.send_text(json.dumps({
-            "status": "connected",
-            "task_id": task_id,
-            "message": "WebSocket连接已建立",
-            "timestamp": datetime.now().isoformat()
-        }, ensure_ascii=False))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "status": "connected",
+                    "task_id": task_id,
+                    "message": "WebSocket连接已建立",
+                    "timestamp": datetime.now().isoformat(),
+                },
+                ensure_ascii=False,
+            )
+        )
 
         # 如果任务已存在，发送已缓存的消息
         if task_id in conftest_tasks and "messages" in conftest_tasks[task_id]:
@@ -1433,7 +1702,9 @@ async def websocket_generate_script_endpoint(websocket: WebSocket, task_id: str)
                         new_messages = messages[last_sent_count:]
                         logger.info(f"发送 {len(new_messages)} 条新消息")
                         for msg in new_messages:
-                            await websocket.send_text(json.dumps(msg, ensure_ascii=False))
+                            await websocket.send_text(
+                                json.dumps(msg, ensure_ascii=False)
+                            )
 
                             # 如果是结束状态，关闭连接
                             if msg.get("status") == "end":
@@ -1445,7 +1716,10 @@ async def websocket_generate_script_endpoint(websocket: WebSocket, task_id: str)
 
                     # 如果任务已完成且没有新消息，关闭连接
                     task_status = conftest_tasks[task_id].get("status")
-                    if task_status in ["completed", "failed"] and len(messages) == last_sent_count:
+                    if (
+                        task_status in ["completed", "failed"]
+                        and len(messages) == last_sent_count
+                    ):
                         logger.info(f"任务状态={task_status}，没有新消息，关闭连接")
                         await asyncio.sleep(0.5)  # 等待最后消息发送
                         await websocket.close()
@@ -1457,10 +1731,15 @@ async def websocket_generate_script_endpoint(websocket: WebSocket, task_id: str)
                     message = json.loads(data)
 
                     if message.get("type") == "ping":
-                        await websocket.send_text(json.dumps({
-                            "type": "pong",
-                            "timestamp": datetime.now().isoformat()
-                        }, ensure_ascii=False))
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "type": "pong",
+                                    "timestamp": datetime.now().isoformat(),
+                                },
+                                ensure_ascii=False,
+                            )
+                        )
                 except asyncio.TimeoutError:
                     # 超时继续循环，检查新消息
                     continue

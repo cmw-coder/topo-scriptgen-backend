@@ -3,11 +3,11 @@ import os
 import json
 import getpass
 from claude_agent_sdk import (
-    query, 
-    ClaudeAgentOptions, 
-    AssistantMessage, 
-    ToolUseBlock, 
-    TextBlock
+    query,
+    ClaudeAgentOptions,
+    AssistantMessage,
+    ToolUseBlock,
+    TextBlock,
 )
 
 import os
@@ -31,12 +31,12 @@ os.environ["ANTHROPIC_AUTH_TOKEN"] = "xx"
 print("ANTHROPIC_BASE_URL:", os.getenv("ANTHROPIC_BASE_URL"))
 print("ANTHROPIC_AUTH_TOKEN:", os.getenv("ANTHROPIC_AUTH_TOKEN"))
 
+
 def escape_all_special_chars(text: str) -> str:
     # 1. json.dumps 会把特殊字符转义 (例如 \n -> \\n)
     # 2. ensure_ascii=False 保证中文不会变成 \uXXXX 乱码
     # 3. [1:-1] 是为了去掉 json.dumps 自动加在首尾的双引号
     return json.dumps(text, ensure_ascii=False)[1:-1]
-
 
 
 async def stream_generate_conftest_response(test_point: str, workspace: str = ""):
@@ -54,36 +54,29 @@ async def stream_generate_conftest_response(test_point: str, workspace: str = ""
         # 1. 设置当前工作目录 (Current Working Directory)
         # Claude 会在这个目录下执行命令，并在该目录的 .claude/skills 中寻找 Project Skills
         cwd=workspace,
-
         # 2. 启用项目设置加载，不加project, 避免读取项目下的claude.md
-        setting_sources=["user"], 
-        
+        setting_sources=["user"],
         # 3. 权限模式 (自动接受以演示流程)
         permission_mode="bypassPermissions",
-        
         # 4. 允许的工具
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
-
         # system_prompt={"type": "preset", "preset": "claude_code"}
     )
 
     print("🚀 正在发送请求以触发 Skill...\n")
-    prompt = escape_all_special_chars(f"调用 skill: network-conftest-generator 为以下测试点生成conftest.py文件,生成的文件保存到工作区:{workspace}，工作区内只能有一份conftest.py.: {test_point}")
+    prompt = escape_all_special_chars(
+        f"调用 skill: network-conftest-generator 为以下测试点生成conftest.py文件,生成的文件保存到工作区:{workspace}，工作区内只能有一份conftest.py.: {test_point}"
+    )
     print("========================")
     print(prompt)
     # 处理转义字符
     try:
-        async for message in query(
-            prompt=prompt, 
-            options=options
-        ):
+        async for message in query(prompt=prompt, options=options):
             # 流式返回对象
             yield message
 
     except Exception as e:
         print(f"❌ 发生错误: {e}")
-
-
 
 
 async def stream_test_script_response(test_point: str, workspace: str = ""):
@@ -101,37 +94,28 @@ async def stream_test_script_response(test_point: str, workspace: str = ""):
         # 1. 设置当前工作目录 (Current Working Directory)
         # Claude 会在这个目录下执行命令，并在该目录的 .claude/skills 中寻找 Project Skills
         cwd=workspace,
-
         # 2. 启用项目设置加载，不加project, 避免读取项目下的claude.md
-        setting_sources=["user"], 
-        
+        setting_sources=["user"],
         # 3. 权限模式 (自动接受以演示流程)
         permission_mode="bypassPermissions",
-        
         # 4. 允许的工具
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
-
         # system_prompt={"type": "preset", "preset": "claude_code"}
     )
 
     print("🚀 正在发送请求以触发 Skill...\n")
-    prompt = escape_all_special_chars(f"调用 skill: test_script_generate ,生成一下测试点的测试脚本：{test_point}")
+    prompt = escape_all_special_chars(
+        f"调用 skill: test_script_generate ,生成一下测试点的测试脚本：{test_point}"
+    )
 
     # 处理转义字符
     try:
-        async for message in query(
-            prompt=prompt, 
-            options=options
-        ):
+        async for message in query(prompt=prompt, options=options):
             # 流式返回对象
             yield message
 
     except Exception as e:
         print(f"❌ 发生错误: {e}")
-
-
-
-
 
 
 async def main():
@@ -144,10 +128,12 @@ async def main():
         2、DUT1修改Add-Path发送路由条数参数，检查DUT3上收到Add-Path路由，路由条数正确。
 """
     # 使用 async for 来消费上面定义的生成器
-    async for msg in stream_test_script_response(test_point=test_point, workspace="C:\\Users\\m31660\\Desktop\\conftest_generate"):
+    async for msg in stream_test_script_response(
+        test_point=test_point, workspace="C:\\Users\\m31660\\Desktop\\conftest_generate"
+    ):
         # 这里的 msg 就是上面 yield 出来的对象
         print(f"📥 收到: {type(msg).__name__}")
-        print(msg) 
+        print(msg)
 
 
 if __name__ == "__main__":

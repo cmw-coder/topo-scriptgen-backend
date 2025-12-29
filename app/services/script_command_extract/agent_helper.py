@@ -109,6 +109,7 @@ class ExtractCommandAgent(object):
         except Exception as e:
             print(f"创建文件夹失败: {e}")
             import traceback
+
             traceback.print_exc()
             return {}
 
@@ -116,7 +117,7 @@ class ExtractCommandAgent(object):
         try:
             for root, dirs, files in os.walk(self.input_path):
                 for file in files:
-                    if file.endswith('.pytestlog.json'):
+                    if file.endswith(".pytestlog.json"):
                         input_file = os.path.join(root, file)
                         filename = os.path.basename(file)
                         output_file = os.path.join(folder_path, filename)
@@ -133,6 +134,7 @@ class ExtractCommandAgent(object):
         except Exception as e:
             print(f"扫描或解码文件时出错: {e}")
             import traceback
+
             traceback.print_exc()
             return {}
 
@@ -158,6 +160,7 @@ class ExtractCommandAgent(object):
         except Exception as e:
             print(f"处理日志文件时出错: {e}")
             import traceback
+
             traceback.print_exc()
             return {}
 
@@ -177,10 +180,10 @@ def _load_default_script_mapping():
         try:
             # 构建绝对路径
             base_dir = Path(__file__).parent.parent.parent.parent  # 回到项目根目录
-            full_path = base_dir / file_path.lstrip('@')
+            full_path = base_dir / file_path.lstrip("@")
 
             if full_path.exists():
-                with open(full_path, 'r', encoding='utf-8') as f:
+                with open(full_path, "r", encoding="utf-8") as f:
                     content = f.read()
                     loaded_mappings[script_name] = content
                     print(f"  - 已加载默认配置: {script_name} <- {file_path}")
@@ -216,10 +219,13 @@ def _initialize_on_startup():
         # 3. 合并配置：默认配置 + 日志配置（日志配置优先）
         filename_command_mapping = {**default_mappings, **log_mappings}
 
-        print(f"Agent Helper: 初始化完成。共 {len(filename_command_mapping)} 个脚本映射。")
+        print(
+            f"Agent Helper: 初始化完成。共 {len(filename_command_mapping)} 个脚本映射。"
+        )
     except Exception as e:
         print(f"Agent Helper: 初始化失败 - {e}")
         import traceback
+
         traceback.print_exc()
 
 

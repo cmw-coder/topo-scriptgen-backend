@@ -1,5 +1,3 @@
-
-
 import logging
 import sys
 from pathlib import Path
@@ -19,11 +17,12 @@ from app.api.itc.itc_router import router as itc_router
 # 注意: Python 3.13 + Windows 事件循环策略已在 main.py 中设置
 # 这里不需要重复设置
 
+
 # 配置日志
 def setup_logging():
     """设置日志配置
-AI_FingerPrint_UUID: 20251224-mO3vjOth
-"""
+    AI_FingerPrint_UUID: 20251224-mO3vjOth
+    """
     # 创建日志目录
     logs_dir = path_manager.get_logs_dir()
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -34,17 +33,14 @@ AI_FingerPrint_UUID: 20251224-mO3vjOth
         format=settings.LOG_FORMAT,
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler(
-                logs_dir / "app.log",
-                encoding="utf-8",
-                mode="a"
-            )
-        ]
+            logging.FileHandler(logs_dir / "app.log", encoding="utf-8", mode="a"),
+        ],
     )
 
     # 设置第三方库日志级别
     logging.getLogger("uvicorn").setLevel(logging.INFO)
     logging.getLogger("fastapi").setLevel(logging.INFO)
+
 
 # 应用生命周期管理
 @asynccontextmanager
@@ -72,6 +68,7 @@ async def lifespan(app: FastAPI):
     # 关闭时执行
     logger.info("应用正在关闭...")
 
+
 # 创建FastAPI应用
 def create_app() -> FastAPI:
     """创建FastAPI应用实例"""
@@ -86,7 +83,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
-        openapi_url="/openapi.json"
+        openapi_url="/openapi.json",
     )
 
     # 添加CORS中间件
@@ -101,7 +98,9 @@ def create_app() -> FastAPI:
     # 添加请求日志中间件
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
-        start_time = request.state.start_time if hasattr(request.state, 'start_time') else None
+        start_time = (
+            request.state.start_time if hasattr(request.state, "start_time") else None
+        )
         response = await call_next(request)
 
         # 记录请求日志
@@ -145,8 +144,8 @@ def create_app() -> FastAPI:
                 "文件操作": "/api/v1/files",
                 "拓扑管理": "/api/v1/topo",
                 "Claude Code": "/api/v1/claude",
-                "WebSocket": "/api/v1/claude/ws/{task_id}"
-            }
+                "WebSocket": "/api/v1/claude/ws/{task_id}",
+            },
         }
 
     @app.get("/info", tags=["项目信息"])
@@ -160,13 +159,13 @@ def create_app() -> FastAPI:
                 "work_directory": str(path_manager.get_project_root()),
                 "scripts_directory": str(path_manager.get_scripts_dir()),
                 "logs_directory": str(path_manager.get_logs_dir()),
-                "topox_directory": str(path_manager.get_topox_dir())
+                "topox_directory": str(path_manager.get_topox_dir()),
             },
             "settings": {
                 "max_file_size": settings.MAX_FILE_SIZE,
                 "allowed_extensions": list(settings.ALLOWED_EXTENSIONS),
-                "claude_timeout": settings.CLAUDE_CODE_TIMEOUT
-            }
+                "claude_timeout": settings.CLAUDE_CODE_TIMEOUT,
+            },
         }
 
     # 设置工作目录的端点
@@ -181,7 +180,7 @@ def create_app() -> FastAPI:
             return {
                 "status": "ok",
                 "message": f"工作目录已设置为: {path}",
-                "new_directory": str(path_manager.get_project_root())
+                "new_directory": str(path_manager.get_project_root()),
             }
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -194,16 +193,22 @@ def create_app() -> FastAPI:
             "work_directory": str(path_manager.get_project_root()),
             "scripts_directory": str(path_manager.get_scripts_dir()),
             "logs_directory": str(path_manager.get_logs_dir()),
-            "topox_directory": str(path_manager.get_topox_dir())
+            "topox_directory": str(path_manager.get_topox_dir()),
         }
 
     # 挂载静态文件（支持 SPA 前端）
     public_dir = Path(__file__).parent.parent / "public"
     if public_dir.exists():
         # 静态资源挂载到 /assets 等路径
-        app.mount("/assets", StaticFiles(directory=str(public_dir / "assets")), name="assets")
+        app.mount(
+            "/assets", StaticFiles(directory=str(public_dir / "assets")), name="assets"
+        )
         if (public_dir / "vite.svg").exists():
-            app.mount("/vite.svg", StaticFiles(directory=str(public_dir), html=False), name="favicon")
+            app.mount(
+                "/vite.svg",
+                StaticFiles(directory=str(public_dir), html=False),
+                name="favicon",
+            )
 
         logger = logging.getLogger(__name__)
         logger.info("Serving static files from %s", public_dir)
@@ -224,6 +229,7 @@ def create_app() -> FastAPI:
         index_file = public_dir / "index.html"
         if index_file.exists():
             from fastapi.responses import FileResponse
+
             return FileResponse(str(index_file))
         else:
             raise HTTPException(status_code=404, detail="Frontend not built")
@@ -239,6 +245,7 @@ def create_app() -> FastAPI:
         index_file = public_dir / "index.html"
         if index_file.exists():
             from fastapi.responses import FileResponse
+
             return FileResponse(str(index_file))
         else:
             raise HTTPException(status_code=404, detail="Frontend not built")
@@ -252,8 +259,8 @@ def create_app() -> FastAPI:
             content={
                 "status": "error",
                 "message": exc.detail,
-                "status_code": exc.status_code
-            }
+                "status_code": exc.status_code,
+            },
         )
 
     @app.exception_handler(Exception)
@@ -267,11 +274,12 @@ def create_app() -> FastAPI:
             content={
                 "status": "error",
                 "message": "服务器内部错误",
-                "status_code": 500
-            }
+                "status_code": 500,
+            },
         )
 
     return app
+
 
 # 创建应用实例
 app = create_app()

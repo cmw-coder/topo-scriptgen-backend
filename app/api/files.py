@@ -7,24 +7,30 @@ from app.services.file_service import file_service
 from app.services.python_analysis_service import python_analysis_service
 from app.services.script_command_extract import (
     refresh_static_variables,
-    filename_command_mapping
+    filename_command_mapping,
 )
 from app.services.topo_service import topo_service
 from app.core.config import settings
 from app.core.path_manager import path_manager
-from app.models.common import BaseResponse, FileOperationRequest, FileOperationResponse, DirectoryItem
+from app.models.common import (
+    BaseResponse,
+    FileOperationRequest,
+    FileOperationResponse,
+    DirectoryItem,
+)
 from app.models.python_analysis import PythonFilesResponse, FilePathRequest
 
 router = APIRouter(prefix="/files", tags=["文件操作"])
 
+
 @router.get("/read", response_model=BaseResponse)
 async def read_file_or_directory(
     path: str = Query(..., description="文件或目录路径"),
-    encoding: str = Query(default="utf-8", description="文件编码")
+    encoding: str = Query(default="utf-8", description="文件编码"),
 ):
     """读取文件或目录内容
-AI_FingerPrint_UUID: 20251224-TXpcoB1x
-"""
+    AI_FingerPrint_UUID: 20251224-TXpcoB1x
+    """
     try:
         # 判断是文件还是目录
         resolved_path = file_service.path_manager.resolve_path(path)
@@ -40,13 +46,13 @@ AI_FingerPrint_UUID: 20251224-TXpcoB1x
             return BaseResponse(
                 status="ok",
                 message=result.message,
-                content=result.content if hasattr(result, 'content') else None,
+                content=result.content if hasattr(result, "content") else None,
                 data={
                     "path": result.path,
                     "operation": result.operation,
                     "size": result.size,
-                    "content": result.content if hasattr(result, 'content') else None
-                }
+                    "content": result.content if hasattr(result, "content") else None,
+                },
             )
         else:
             raise HTTPException(status_code=400, detail=result.message)
@@ -56,6 +62,7 @@ AI_FingerPrint_UUID: 20251224-TXpcoB1x
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取失败: {str(e)}")
 
+
 @router.post("/write", response_model=BaseResponse)
 async def write_file(request: FileOperationRequest):
     """写入文件内容"""
@@ -64,9 +71,7 @@ async def write_file(request: FileOperationRequest):
             raise HTTPException(status_code=400, detail="文件内容不能为空")
 
         result = await file_service.write_file(
-            request.path,
-            request.content,
-            request.encoding
+            request.path, request.content, request.encoding
         )
 
         if result.success:
@@ -76,8 +81,8 @@ async def write_file(request: FileOperationRequest):
                 data={
                     "path": result.path,
                     "operation": result.operation,
-                    "size": result.size
-                }
+                    "size": result.size,
+                },
             )
         else:
             raise HTTPException(status_code=400, detail=result.message)
@@ -86,6 +91,7 @@ async def write_file(request: FileOperationRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"写入失败: {str(e)}")
+
 
 @router.delete("/delete", response_model=BaseResponse)
 async def delete_file_or_directory(
@@ -102,8 +108,8 @@ async def delete_file_or_directory(
                 data={
                     "path": result.path,
                     "operation": result.operation,
-                    "size": result.size
-                }
+                    "size": result.size,
+                },
             )
         else:
             raise HTTPException(status_code=400, detail=result.message)
@@ -112,6 +118,7 @@ async def delete_file_or_directory(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
 
 @router.get("/tree", response_model=BaseResponse)
 async def get_directory_tree(
@@ -134,10 +141,14 @@ async def get_directory_tree(
             return {
                 "label": item.label,
                 "path": path,
-                "children": [item_to_dict(child) for child in item.children] if item.children else None,
+                "children": (
+                    [item_to_dict(child) for child in item.children]
+                    if item.children
+                    else None
+                ),
                 "is_file": item.is_file,
                 "size": item.size,
-                "modified_time": formatted_time
+                "modified_time": formatted_time,
             }
 
         tree_data = [item_to_dict(item) for item in tree_items]
@@ -145,16 +156,15 @@ async def get_directory_tree(
         return BaseResponse(
             status="ok",
             message=f"成功获取目录树，共 {len(tree_data)} 个顶级项目",
-            data=tree_data
+            data=tree_data,
         )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取目录树失败: {str(e)}")
 
+
 @router.get("/list", response_model=BaseResponse)
-async def list_directory(
-    path: str = Query(..., description="目录路径")
-):
+async def list_directory(path: str = Query(..., description="目录路径")):
     """列出目录内容（扁平结构）"""
     try:
         result = await file_service.read_directory(path)
@@ -162,15 +172,14 @@ async def list_directory(
         if result.success:
             # 解析返回的JSON内容
             import json
+
             if result.content:
                 directory_items = json.loads(result.content)
             else:
                 directory_items = []
 
             return BaseResponse(
-                status="ok",
-                message=result.message,
-                data=directory_items
+                status="ok", message=result.message, data=directory_items
             )
         else:
             raise HTTPException(status_code=400, detail=result.message)
@@ -180,6 +189,7 @@ async def list_directory(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"列出目录失败: {str(e)}")
 
+
 @router.get("/python-files", response_model=PythonFilesResponse)
 async def get_all_python_files(
     base_path: Optional[str] = Query(None, description="基础路径，为空时搜索整个项目")
@@ -187,22 +197,24 @@ async def get_all_python_files(
     """获取项目中所有Python文件列表"""
     try:
         python_files = await python_analysis_service.find_all_python_files(base_path)
-        
+
         return PythonFilesResponse(
             status="ok",
             message=f"找到 {len(python_files)} 个Python文件",
             data=python_files,
-            total_count=len(python_files)
+            total_count=len(python_files),
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取Python文件列表失败: {str(e)}")
+
 
 @router.post("/executed-command-lines", response_model=BaseResponse)
 async def extract_executed_command_lines(request: FilePathRequest):
     """根据Python执行后的日志提取命令行"""
     try:
         import logging
+
         logger = logging.getLogger(__name__)
 
         # Get the filename from the request path
@@ -217,6 +229,7 @@ async def extract_executed_command_lines(request: FilePathRequest):
         # 实时解析日志文件，不使用缓存
         # 每次解析前会删除并重建 local 目录，确保使用最新的解码文件
         from app.services.script_command_extract.agent_helper import ExtractCommandAgent
+
         agent = ExtractCommandAgent(settings.get_script_command_log_path())
         log_command_mapping = agent.get_log_command_info()
 
@@ -236,7 +249,9 @@ async def extract_executed_command_lines(request: FilePathRequest):
             for key, value in log_command_mapping.items():
                 if filename in key or key in filename:
                     command_lines = value
-                    logger.info(f"部分匹配成功: 请求文件名='{filename}', 映射键='{key}'")
+                    logger.info(
+                        f"部分匹配成功: 请求文件名='{filename}', 映射键='{key}'"
+                    )
                     break
             else:
                 logger.warning(f"未找到匹配的命令行映射")
@@ -255,10 +270,7 @@ async def extract_executed_command_lines(request: FilePathRequest):
         return BaseResponse(
             status="ok",
             message="成功提取命令行",
-            data={
-                "commandLines": command_lines,
-                "deviceList": device_list
-            }
+            data={"commandLines": command_lines, "deviceList": device_list},
         )
 
     except Exception as e:
@@ -283,11 +295,13 @@ async def _get_device_list_from_topox():
         # 转换为字典格式的设备列表
         device_list = []
         for device in topox_response.network.device_list:
-            device_list.append({
-                "name": device.name,
-                "location": device.location,
-                "title": device.name  # 添加 title 属性，默认使用设备名
-            })
+            device_list.append(
+                {
+                    "name": device.name,
+                    "location": device.location,
+                    "title": device.name,  # 添加 title 属性，默认使用设备名
+                }
+            )
 
         # 2. 获取部署状态和已部署的设备信息
         deploy_status = settings.get_deploy_status()
@@ -306,7 +320,9 @@ async def _get_device_list_from_topox():
                         "type": device_info.get("type"),
                         "executorip": device_info.get("executorip"),
                         "userip": device_info.get("userip"),
-                        "title": device_info.get("title")  # 添加 title，从 deploy 返回的值获取
+                        "title": device_info.get(
+                            "title"
+                        ),  # 添加 title，从 deploy 返回的值获取
                     }
 
             # 为设备列表中的每个设备添加连接信息
@@ -320,6 +336,7 @@ async def _get_device_list_from_topox():
     except Exception as e:
         # 如果读取失败，记录错误并返回空列表
         import logging
+
         logger = logging.getLogger(__name__)
         logger.error(f"从 topox 文件获取设备列表失败: {str(e)}")
         return []
