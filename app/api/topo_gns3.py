@@ -80,7 +80,7 @@ async def get_gns3_token() -> tuple[str, JSONResponse | None]:
     return token, None
 
 
-@router.post("/api/v1/topox-from-gns3")
+@router.post("/topox-from-gns3")
 async def post_topox_from_gns3(request: Request) -> JSONResponse:
     token, token_error = await get_gns3_token()
     if token_error:
@@ -244,9 +244,9 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
         )
 
 
-@router.get("/api/v1/to-web-ui", response_model=None)
+@router.get("/to-web-ui", response_model=None)
 async def to_web_ui() -> Response:
-    logger.info("GET /api/v1/to-web-ui")
+    logger.info("GET /to-web-ui")
     token, token_error = await get_gns3_token()
     if token_error:
         return token_error

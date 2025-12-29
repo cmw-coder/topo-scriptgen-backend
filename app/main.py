@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.path_manager import path_manager
 from app.api import files, claude
 from app.api import topo_simple as topo
+from app.api import topo_gns3
 from app.api.itc.itc_router import router as itc_router
 
 # 注意: Python 3.13 + Windows 事件循环策略已在 main.py 中设置
@@ -114,20 +115,16 @@ def create_app() -> FastAPI:
         return response
 
     # 注册路由
-    app.include_router(files.router, prefix="/api/v1")
-    app.include_router(topo.router, prefix="")  # topo路由已经在内部定义了完整路径
     app.include_router(claude.router, prefix="/api/v1")
+    app.include_router(files.router, prefix="/api/v1")
+    app.include_router(topo_gns3.router, prefix="/api/v1")
+    app.include_router(topo.router, prefix="")  # topo路由已经在内部定义了完整路径
     app.include_router(itc_router, prefix="/api/v1")
 
     # 健康检查端点
     @app.get("/healthz", response_class=PlainTextResponse, tags=["健康检查"])
     async def health_check():
         """健康检查端点"""
-        return "OK"
-
-    @app.get("/health", response_class=PlainTextResponse, tags=["健康检查"])
-    async def health_check_extended():
-        """扩展健康检查端点"""
         return "OK"
 
     # 项目信息端点（重命名，避免与根路径冲突）
