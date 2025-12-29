@@ -8,7 +8,6 @@ from xml.etree.ElementTree import ParseError
 from app.core.path_manager import path_manager
 from app.models.topox import TopoxRequest
 from app.services.topo_service import topo_service
-from app.utils.topox import parse_topox
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,8 @@ async def get_topox() -> JSONResponse:
     if topox_path.exists():
         try:
             data = topox_path.read_text(encoding="utf-8")
-            network = parse_topox(data)
+            # topo_service returns a Network pydantic model; convert to dict for JSON response
+            network = topo_service.parse_topox_xml(data).model_dump()
         except OSError:
             logger.exception("Failed to read %s", topox_path)
             return JSONResponse(
@@ -137,7 +137,8 @@ async def get_physical_devices() -> JSONResponse:
         if topox_path.exists():
             try:
                 data = topox_path.read_text(encoding="utf-8")
-                network = parse_topox(data)
+                # topo_service returns a Network pydantic model; convert to dict for JSON response
+                network = topo_service.parse_topox_xml(data).model_dump()
             except OSError:
                 logger.exception("Failed to read %s", topox_path)
                 network = {"device_list": [], "link_list": []}

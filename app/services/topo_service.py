@@ -1,9 +1,8 @@
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 import logging
 import shutil
 import os
-from typing import Optional
 
 from app.core.path_manager import path_manager
 from app.models.topox import Network, Device, Link, TopoxRequest, TopoxResponse
@@ -21,7 +20,7 @@ class TopoService:
     def __init__(self):
         self.path_manager = path_manager
 
-    def _indent(self, elem: ET.Element, level: int = 0) -> None:
+    def _indent(self, elem: ElementTree.Element, level: int = 0) -> None:
         """美化XML格式，进行缩进处理"""
         indent_str = "  "
         i = "\n" + level * indent_str
@@ -39,31 +38,31 @@ class TopoService:
     def build_topox_xml(self, request: TopoxRequest) -> str:
         """将请求转换为topox XML字符串"""
         try:
-            network_elem = ET.Element("NETWORK")
+            network_elem = ElementTree.Element("NETWORK")
 
             network = request.network
             device_list = network.device_list or []
             link_list = network.link_list or []
 
             # 添加设备列表
-            device_list_elem = ET.SubElement(network_elem, "DEVICE_LIST")
+            device_list_elem = ElementTree.SubElement(network_elem, "DEVICE_LIST")
             for device in device_list:
-                device_elem = ET.SubElement(device_list_elem, "DEVICE")
-                prop_elem = ET.SubElement(device_elem, "PROPERTY")
-                ET.SubElement(prop_elem, "NAME").text = device.name or ""
-                ET.SubElement(prop_elem, "TYPE").text = "Simware9"
-                ET.SubElement(prop_elem, "ENABLE").text = "TRUE"
-                ET.SubElement(prop_elem, "IS_DOUBLE_MCU").text = "FALSE"
-                ET.SubElement(prop_elem, "IS_SINGLE_MCU").text = "FALSE"
-                ET.SubElement(prop_elem, "IS_SAME_DUT_TYPE").text = "FALSE"
-                ET.SubElement(prop_elem, "MAP_PRIORITY").text = "0"
-                ET.SubElement(prop_elem, "IS_DUT").text = "true"
-                ET.SubElement(prop_elem, "LOCATION").text = device.location or ""
+                device_elem = ElementTree.SubElement(device_list_elem, "DEVICE")
+                prop_elem = ElementTree.SubElement(device_elem, "PROPERTY")
+                ElementTree.SubElement(prop_elem, "NAME").text = device.name or ""
+                ElementTree.SubElement(prop_elem, "TYPE").text = "Simware9"
+                ElementTree.SubElement(prop_elem, "ENABLE").text = "TRUE"
+                ElementTree.SubElement(prop_elem, "IS_DOUBLE_MCU").text = "FALSE"
+                ElementTree.SubElement(prop_elem, "IS_SINGLE_MCU").text = "FALSE"
+                ElementTree.SubElement(prop_elem, "IS_SAME_DUT_TYPE").text = "FALSE"
+                ElementTree.SubElement(prop_elem, "MAP_PRIORITY").text = "0"
+                ElementTree.SubElement(prop_elem, "IS_DUT").text = "true"
+                ElementTree.SubElement(prop_elem, "LOCATION").text = device.location or ""
 
             # 添加链路列表
-            link_list_elem = ET.SubElement(network_elem, "LINK_LIST")
+            link_list_elem = ElementTree.SubElement(network_elem, "LINK_LIST")
             for link in link_list:
-                link_elem = ET.SubElement(link_list_elem, "LINK")
+                link_elem = ElementTree.SubElement(link_list_elem, "LINK")
                 start_device = link.start_device or ""
                 end_device = link.end_device or ""
                 start_port = link.start_port or ""
@@ -73,18 +72,18 @@ class TopoService:
                     (start_device, start_port),
                     (end_device, end_port),
                 ):
-                    node_elem = ET.SubElement(link_elem, "NODE")
-                    ET.SubElement(node_elem, "DEVICE").text = device_name
-                    port_elem = ET.SubElement(node_elem, "PORT")
-                    ET.SubElement(port_elem, "NAME").text = port_name
-                    ET.SubElement(port_elem, "TYPE").text = ""
-                    ET.SubElement(port_elem, "IPAddr").text = ""
-                    ET.SubElement(port_elem, "IPv6Addr").text = ""
-                    ET.SubElement(port_elem, "SLOT_TYPE").text = ""
-                    ET.SubElement(port_elem, "TAG").text = ""
+                    node_elem = ElementTree.SubElement(link_elem, "NODE")
+                    ElementTree.SubElement(node_elem, "DEVICE").text = device_name
+                    port_elem = ElementTree.SubElement(node_elem, "PORT")
+                    ElementTree.SubElement(port_elem, "NAME").text = port_name
+                    ElementTree.SubElement(port_elem, "TYPE").text = ""
+                    ElementTree.SubElement(port_elem, "IPAddr").text = ""
+                    ElementTree.SubElement(port_elem, "IPv6Addr").text = ""
+                    ElementTree.SubElement(port_elem, "SLOT_TYPE").text = ""
+                    ElementTree.SubElement(port_elem, "TAG").text = ""
 
             self._indent(network_elem)
-            xml_bytes = ET.tostring(
+            xml_bytes = ElementTree.tostring(
                 network_elem, encoding="utf-8", xml_declaration=True
             )
             return xml_bytes.decode("utf-8")
@@ -102,7 +101,7 @@ class TopoService:
                 logger.warning("XML内容为空，返回空的Network对象")
                 return network
 
-            root = ET.fromstring(xml_text)
+            root = ElementTree.fromstring(xml_text)
 
             # 解析设备列表
             device_list_elem = root.find("DEVICE_LIST")
@@ -132,7 +131,7 @@ class TopoService:
                     if len(nodes) < 2:
                         continue
 
-                    def _node_details(node: ET.Element) -> tuple[str, str]:
+                    def _node_details(node: ElementTree.Element) -> tuple[str, str]:
                         device_elem = node.find("DEVICE")
                         port_name_elem = node.find("PORT/NAME")
                         device_name = (
@@ -159,7 +158,7 @@ class TopoService:
 
             return network
 
-        except ET.ParseError as e:
+        except ElementTree.ParseError as e:
             logger.error(f"解析topox XML失败: {str(e)}")
             raise ValueError(f"XML解析错误: {str(e)}")
         except Exception as e:
@@ -230,7 +229,7 @@ class TopoService:
                 network=network, xml_content=xml_content, file_path=str(file_path)
             )
 
-        except ET.ParseError as e:
+        except ElementTree.ParseError as e:
             logger.error(f"topox文件XML格式错误: {file_path}, 错误: {str(e)}")
             raise ValueError(f"topox文件格式错误: {str(e)}")
         except Exception as e:
