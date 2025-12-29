@@ -1,0 +1,17 @@
+url:http://10.111.8.68:8000/aigc/newdeploy
+method:POST
+body:
+topofile:topox文件目录，一般是svn目录
+versionpath:版本目录，可选，运行脚本需要的版本目录
+devicetype:设备类型，可选，支持simware9cen、simware9dis、simware7dis，默认simware9cen
+output:（指的是response里的内容）
+“return_code”:”200”，”return_info”: {executorip:执行机ip,terminalinfo:终端连接信息，格式为：控制台名称:[host,port,type]} 举例： "return_info": {"excutorip": "10.144.42.25", "terminalinfo": {"DUT3": ["10.144.42.24", "20144", "telnet"], "DUT1": ["10.144.42.24", "20160", "telnet"], "DUT2": ["10.144.42.24", "20176", "telnet"]}}
+“return_code”:”400”，”return_info”:”请求参数为空”
+“return_code”:”400”，”return_info”:”当前时间无法部署环境，请在每天8:30-18:00时部署！” 
+“return_code”:”500”，”return_info”:” 环境部署失败,错误详情：”
+“return_code”:”500”，”return_info”:”指定目录下没有topox，或文件不唯一，请检查目录是否正确！”
+“return_code”:”500”，”return_info”:”测试床占用失败！”
+“return_code”:”500”，”return_info”:”任务超过最大等待时间，测试床仍未就绪”
+“return_code”:”500”，”return_info”:” 已无空闲执行环境，请稍后再试！”
+
+
