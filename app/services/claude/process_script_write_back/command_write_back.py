@@ -1098,6 +1098,59 @@ def copy_temp_and_prototype(source_path):
         print(f"❌ prototype_script.py 失败：{e}")
         return success > 0
 
+
+def replace_return_with_ctrlz_by_file(input_filename, output_filename=None):
+    """
+    从指定文件读取文本，将独立单词return替换为ctrl+z（#/!开头行不处理），并写入文件
+
+    参数：
+        input_filename: 输入文件名称（含路径，字符串类型），待处理的文件
+        output_filename: 输出文件名称（含路径，字符串类型），可选参数
+                         若为None，直接覆盖原文件；若指定值，写入新文件，不修改原文件
+
+    返回：
+        None，处理结果直接写入文件
+    """
+    try:
+        # 第一步：读取输入文件的全部内容
+        with open(input_filename, 'r', encoding='utf-8') as f:
+            text_content = f.read()
+
+        # 第二步：核心处理逻辑（复用原有规则，仅调整载体为文件内容）
+        # 按行分割（保留换行符，保证原文件格式不变）
+        lines = text_content.splitlines(True)
+        processed_lines = []
+
+        for line in lines:
+            # 过滤#或!开头的行，直接保留原内容
+            if line.startswith(('#', '!')):
+                processed_lines.append(line)
+                continue
+            # 正则匹配独立单词return，仅替换独立存在的情况（规避return1、areturn等）
+            # \b 单词边界锚点，确保匹配独立单词
+            pattern = r'\breturn\b'
+            processed_line = re.sub(pattern, 'ctrl+z', line)
+            processed_lines.append(processed_line)
+
+        # 拼接处理后的所有行，恢复为完整文本
+        processed_text = ''.join(processed_lines)
+
+        # 第三步：确定输出文件，写入处理后的内容
+        # 若未指定输出文件，覆盖原文件；否则写入指定新文件
+        target_filename = input_filename if output_filename is None else output_filename
+        with open(target_filename, 'w', encoding='utf-8') as f:
+            f.write(processed_text)
+
+        print(f"return还原为ctrl+z，处理完成！结果已写入：{target_filename}")
+
+    except FileNotFoundError:
+        print(f"错误：找不到文件「{input_filename}」，请检查文件路径和名称是否正确")
+    except PermissionError:
+        print(f"错误：没有权限读取「{input_filename}」或写入「{target_filename}」")
+    except Exception as e:
+        print(f"未知错误：{str(e)}")
+
+
 def main():
     global glb_parent_dir
     # ========== 第一步：校验参数是否传入（参数存在性） ==========
@@ -1213,6 +1266,9 @@ def main():
         except Exception as e:
             print(f"mapping.json写入失败：{e}")
     
+    # 把file3中的return还原为ctrl+z
+    replace_return_with_ctrlz_by_file(file3)
+
     # 更新差异函数
     write_back_diff_func(temp_path, file2, file3)
 
