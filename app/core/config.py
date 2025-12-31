@@ -13,7 +13,7 @@ class Settings:
 
     # 服务器设置
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 3000
     DEBUG: bool = False
 
     # 全局静态变量 - 项目工作目录
