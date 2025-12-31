@@ -72,7 +72,7 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
             message="部署任务已提交，正在后台执行中",
             data={
                 "status": "deploying",
-                "message": "请稍后调用 /deployDeviceList 接口查询部署结果"
+                "message": "请稍后调用接口查询部署结果"
             }
         )
 

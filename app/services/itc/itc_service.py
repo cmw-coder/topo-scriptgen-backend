@@ -544,7 +544,8 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
                 logger.info("=" * 80)
                 logger.info("后台部署任务开始执行")
                 logger.info("=" * 80)
-
+                settings.set_deploy_status("deploying")
+                settings.set_deploy_error_message(None)
                 # 先测试 ITC 服务器连接
                 logger.info("开始测试 ITC 服务器连接...")
                 connection_ok = await self._test_itc_connection()
