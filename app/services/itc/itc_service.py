@@ -13,24 +13,21 @@ from app.models.itc.itc_models import (
     NewDeployRequest,
     RunScriptRequest,
     ExecutorRequest,
-    SimpleResponse,
+    SimpleResponse
 )
 
 logger = logging.getLogger(__name__)
 
-
 class ITCService:
     """ITC API 代理服务
-    AI_FingerPrint_UUID: 20251224-0v1bChBB
-    """
+AI_FingerPrint_UUID: 20251224-0v1bChBB
+"""
 
     def __init__(self):
         self.base_url = settings.ITC_SERVER_URL
         self.timeout = settings.ITC_REQUEST_TIMEOUT
 
-    async def _make_request(
-        self, endpoint: str, data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _make_request(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """发送 HTTP 请求到 ITC 服务器"""
         url = f"{self.base_url}/{endpoint}"
 
@@ -40,7 +37,6 @@ class ITCService:
 
         # 显示 JSON 序列化后的数据（用于调试转义）
         import json
-
         json_data = json.dumps(data, ensure_ascii=False, indent=2)
         logger.info(f"JSON 序列化后的数据:\n{json_data}")
 
@@ -50,9 +46,7 @@ class ITCService:
             logger.info(f"正在连接到 ITC 服务器: {url}")
             logger.info(f"代理设置: trust_env=False (已禁用环境代理)")
 
-            async with httpx.AsyncClient(
-                timeout=self.timeout, trust_env=False
-            ) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
                 logger.info(f"HTTP 客户端已创建，开始发送请求...")
                 response = await client.post(url, json=data)
                 logger.info(f"收到响应 - 状态码: {response.status_code}")
@@ -65,19 +59,18 @@ class ITCService:
             return {
                 "return_code": str(e.response.status_code),
                 "return_info": f"HTTP 错误: {e.response.text}",
-                "result": None,
+                "result": None
             }
         except httpx.TimeoutException:
             logger.error(f"请求超时: {endpoint}")
             return {
                 "return_code": "500",
                 "return_info": "请求超时，请稍后重试",
-                "result": None,
+                "result": None
             }
         except Exception as e:
             # 记录完整的异常信息，包括类型、消息和堆栈
             import traceback
-
             error_type = type(e).__name__
             error_msg = str(e) if str(e) else "(空错误消息)"
             error_trace = traceback.format_exc()
@@ -88,7 +81,7 @@ class ITCService:
             return {
                 "return_code": "500",
                 "return_info": f"请求异常: {error_type} - {error_msg}",
-                "result": None,
+                "result": None
             }
 
     def _find_topox_directory(self) -> str:
@@ -103,7 +96,7 @@ class ITCService:
 
             if topox_files:
                 logger.info(f"找到 test_scripts 目录，包含 topox 文件")
-                topox_dir = test_scripts_dir.replace("\\", "/")
+                topox_dir = test_scripts_dir.replace('\\', '/')
                 logger.info(f"使用 topox 目录: {topox_dir}")
                 return topox_dir
 
@@ -116,16 +109,14 @@ class ITCService:
 
         # 获取第一个 topox 文件所在的目录
         topox_file = topox_files[0]
-        topox_dir = os.path.dirname(topox_file).replace("\\", "/")
+        topox_dir = os.path.dirname(topox_file).replace('\\', '/')
 
         # 检查该目录下是否有唯一的 topox 文件
         dir_pattern = os.path.join(os.path.dirname(topox_file), "*.topox")
         dir_topox_files = glob.glob(dir_pattern)
 
         if len(dir_topox_files) > 1:
-            logger.warning(
-                f"目录 {topox_dir} 中包含多个 topox 文件: {[os.path.basename(f) for f in dir_topox_files]}"
-            )
+            logger.warning(f"目录 {topox_dir} 中包含多个 topox 文件: {[os.path.basename(f) for f in dir_topox_files]}")
         else:
             logger.info(f"找到唯一的 topox 文件: {os.path.basename(topox_file)}")
 
@@ -180,7 +171,7 @@ class ITCService:
                 return None
 
             # 读取文件
-            with open(aigc_json_path, "r", encoding="utf-8") as f:
+            with open(aigc_json_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
                 if not content:
                     logger.info("aigc.json 文件为空")
@@ -221,7 +212,7 @@ class ITCService:
                 return None
 
             # 读取文件
-            with open(aigc_json_path, "r", encoding="utf-8") as f:
+            with open(aigc_json_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
                 if not content:
                     logger.info("aigc.json 文件为空")
@@ -233,9 +224,7 @@ class ITCService:
                 device_list = config.get("device_list")
 
                 if device_list and isinstance(device_list, list):
-                    logger.info(
-                        f"从 aigc.json 读取到 device_list: 共 {len(device_list)} 个设备"
-                    )
+                    logger.info(f"从 aigc.json 读取到 device_list: 共 {len(device_list)} 个设备")
                 else:
                     logger.info("aigc.json 中未找到 device_list 字段或字段为空")
                     device_list = None
@@ -252,9 +241,9 @@ class ITCService:
     def _cleanup_aigc_config_after_undeploy(self) -> None:
         """在 undeploy 成功后清理 aigc.json 配置
 
-        删除：
+        将以下字段置空（空字符串）：
         - exec_ip 字段
-        - 设备列表中每个设备的 host 信息（保留其他字段如 name, title, port, type, executorip, userip）
+        - 设备列表中每个设备的 host、port、title 字段
 
         Returns:
             None
@@ -271,7 +260,7 @@ class ITCService:
                 return
 
             # 读取文件
-            with open(aigc_json_path, "r", encoding="utf-8") as f:
+            with open(aigc_json_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
                 if not content:
                     logger.info("aigc.json 文件为空，无需清理")
@@ -282,32 +271,36 @@ class ITCService:
                 config = json.loads(content)
 
             # 记录清理前的内容
-            logger.info(
-                f"清理前的 aigc.json 内容:\n{json.dumps(config, indent=2, ensure_ascii=False)}"
-            )
+            logger.info(f"清理前的 aigc.json 内容:\n{json.dumps(config, indent=2, ensure_ascii=False)}")
 
-            # 1. 删除 exec_ip 字段
+            # 1. 将 exec_ip 字段置空
             if "exec_ip" in config:
-                del config["exec_ip"]
-                logger.info("已删除 exec_ip 字段")
+                config["exec_ip"] = ""
+                logger.info("已将 exec_ip 字段置空")
 
-            # 2. 删除设备列表中的 host 信息
+            # 2. 将设备列表中的 host、port、title 字段置空
             if "device_list" in config and isinstance(config["device_list"], list):
-                host_count = 0
+                device_count = 0
                 for device in config["device_list"]:
-                    if isinstance(device, dict) and "host" in device:
-                        del device["host"]
-                        host_count += 1
-                logger.info(f"已从 {host_count} 个设备中删除 host 字段")
+                    if isinstance(device, dict):
+                        # 置空 host
+                        if "host" in device:
+                            device["host"] = ""
+                        # 置空 port
+                        if "port" in device:
+                            device["port"] = ""
+                        # 置空 title
+                        if "title" in device:
+                            device["title"] = ""
+                        device_count += 1
+                logger.info(f"已将 {device_count} 个设备的 host、port、title 字段置空")
 
             # 写回文件
-            with open(aigc_json_path, "w", encoding="utf-8") as f:
+            with open(aigc_json_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
 
             logger.info(f"已更新 aigc.json 文件: {aigc_json_path}")
-            logger.info(
-                f"清理后的 aigc.json 内容:\n{json.dumps(config, indent=2, ensure_ascii=False)}"
-            )
+            logger.info(f"清理后的 aigc.json 内容:\n{json.dumps(config, indent=2, ensure_ascii=False)}")
 
             # 更新部署状态为 not_deployed
             settings.set_deploy_status("not_deployed")
@@ -324,7 +317,7 @@ class ITCService:
         version_path: Optional[str],
         device_type: str,
         executorip: Optional[str] = None,
-        device_list: Optional[List[Dict[str, Any]]] = None,
+        device_list: Optional[List[Dict[str, Any]]] = None
     ) -> None:
         """在用户目录中创建或更新 .aigc_tool/aigc.json 文件
 
@@ -348,14 +341,14 @@ class ITCService:
         converted_version_path = ""
         if version_path:
             # 将正斜杠转换为双反斜杠
-            converted_version_path = version_path.replace("/", "\\\\")
+            converted_version_path = version_path.replace('/', '\\\\')
             logger.info(f"版本路径转换: {version_path} -> {converted_version_path}")
 
         # 构造 aigc.json 数据
         aigc_config = {
             "topx_file": topox_file,
             "version_path": converted_version_path,
-            "device_type": device_type,
+            "device_type": device_type
         }
 
         # 如果提供了 executorip，添加执行相关配置
@@ -363,9 +356,7 @@ class ITCService:
             aigc_config["exec_ip"] = executorip
             aigc_config["username"] = "itc"
             aigc_config["password"] = "auto_123"
-            logger.info(
-                f"添加执行机配置: exec_ip={executorip}, username=itc, password=auto_123"
-            )
+            logger.info(f"添加执行机配置: exec_ip={executorip}, username=itc, password=auto_123")
 
         # 如果提供了 device_list，添加设备列表
         if device_list:
@@ -376,13 +367,11 @@ class ITCService:
         aigc_json_path = os.path.join(aigc_tool_dir, "aigc.json")
 
         # 写入 JSON 文件
-        with open(aigc_json_path, "w", encoding="utf-8") as f:
+        with open(aigc_json_path, 'w', encoding='utf-8') as f:
             json.dump(aigc_config, f, indent=2, ensure_ascii=False)
 
         logger.info(f"已创建/更新 aigc.json 文件: {aigc_json_path}")
-        logger.info(
-            f"aigc.json 内容:\n{json.dumps(aigc_config, indent=2, ensure_ascii=False)}"
-        )
+        logger.info(f"aigc.json 内容:\n{json.dumps(aigc_config, indent=2, ensure_ascii=False)}")
 
     def _convert_to_unc_path(self, local_dir: str) -> str:
         """将本地目录路径转换为 UNC 网络路径，供 ITC 服务器访问
@@ -410,7 +399,7 @@ class ITCService:
             unc_topox_dir = os.path.join(unc_base_dir, f"topox_{timestamp}")
 
             # 转换为正斜杠格式
-            unc_topox_dir = unc_topox_dir.replace("\\", "/")
+            unc_topox_dir = unc_topox_dir.replace('\\', '/')
 
             logger.info(f"将本地目录 {local_dir} 的文件拷贝到网络共享: {unc_topox_dir}")
 
@@ -460,9 +449,7 @@ class ITCService:
                 os.chmod(target_file_path, 0o777)
                 os.chmod(target_dir, 0o777)
             except PermissionError:
-                logger.warning(
-                    f"权限不足，无法设置文件权限 {target_file_path}，但文件已成功拷贝"
-                )
+                logger.warning(f"权限不足，无法设置文件权限 {target_file_path}，但文件已成功拷贝")
 
             logger.info(f"已拷贝 {filename} 到 {target_dir}")
             logger.info(f"目标文件: {target_file_path}")
@@ -475,9 +462,7 @@ class ITCService:
             # 如果拷贝失败，返回源文件所在目录
             return os.path.dirname(topox_file_path)
 
-    def _convert_terminalinfo_to_device_list(
-        self, executorip: str, terminalinfo: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+    def _convert_terminalinfo_to_device_list(self, executorip: str, terminalinfo: Dict[str, Any]) -> List[Dict[str, Any]]:
         """将 terminalinfo 转换为设备列表格式（类似 /api/v1/physical-devices）
 
         新增：为每个设备添加 title 属性
@@ -494,7 +479,7 @@ class ITCService:
                     "port": int(connection_info[1]),  # 端口号
                     "type": connection_info[2],  # 协议类型 (telnet/ssh)
                     "executorip": executorip,  # 执行机IP
-                    "userip": local_ip,  # 本机IP
+                    "userip": local_ip  # 本机IP
                 }
 
                 # 添加 title 属性（如果有第4个元素）
@@ -507,9 +492,7 @@ class ITCService:
                 device_list.append(device)
 
         logger.info(f"转换后的设备列表: {device_list}")
-        logger.info(
-            f"设备列表包含 title 属性: {all('title' in device for device in device_list)}"
-        )
+        logger.info(f"设备列表包含 title 属性: {all('title' in device for device in device_list)}")
         return device_list
 
     async def _test_itc_connection(self) -> bool:
@@ -542,7 +525,10 @@ class ITCService:
             return False
 
     def _execute_deploy_background(
-        self, request: NewDeployRequest, default_topox_file: str, unc_topofile: str
+        self,
+        request: NewDeployRequest,
+        default_topox_file: str,
+        unc_topofile: str
     ) -> None:
         """后台任务：执行实际的部署逻辑
 
@@ -565,9 +551,7 @@ class ITCService:
                 if not connection_ok:
                     logger.error("ITC 服务器连接失败，终止部署任务")
                     settings.set_deploy_status("failed")
-                    settings.set_deploy_error_message(
-                        "无法连接到 ITC 服务器，请检查网络和服务器状态"
-                    )
+                    settings.set_deploy_error_message("无法连接到 ITC 服务器，请检查网络和服务器状态")
                     return
 
                 logger.info("ITC 服务器连接正常，继续部署流程")
@@ -605,16 +589,14 @@ class ITCService:
 
                     # 构造 undeploy 请求
                     undeploy_data = {"executorip": existing_exec_ip}
-                    undeploy_result = await self._make_request(
-                        "undeploy", undeploy_data
-                    )
+                    undeploy_result = await self._make_request("undeploy", undeploy_data)
 
                     logger.info(f"Undeploy 响应: {undeploy_result}")
 
                     if undeploy_result.get("return_code") == "200":
                         logger.info("旧环境释放成功 (undeploy 成功)")
                     else:
-                        error_msg = str(undeploy_result.get("return_info", "未知错误"))
+                        error_msg = str(undeploy_result.get('return_info', '未知错误'))
                         logger.warning(f"Undeploy 返回非成功状态: {error_msg}")
                         logger.warning("继续执行 deploy，可能会遇到资源冲突")
 
@@ -637,12 +619,8 @@ class ITCService:
 
                         if executorip and terminalinfo:
                             # 转换 terminalinfo 为设备列表格式
-                            device_list = self._convert_terminalinfo_to_device_list(
-                                executorip, terminalinfo
-                            )
-                            logger.info(
-                                f"设备列表转换完成，共 {len(device_list)} 个设备"
-                            )
+                            device_list = self._convert_terminalinfo_to_device_list(executorip, terminalinfo)
+                            logger.info(f"设备列表转换完成，共 {len(device_list)} 个设备")
 
                             # 保存配置到 .aigc_tool/aigc.json（包含 executorip 和 device_list）
                             try:
@@ -651,11 +629,9 @@ class ITCService:
                                     version_path=version_path,
                                     device_type=request.devicetype or "simware9cen",
                                     executorip=executorip,
-                                    device_list=device_list,
+                                    device_list=device_list
                                 )
-                                logger.info(
-                                    f"已保存 aigc.json 配置文件，包含执行机IP和设备列表"
-                                )
+                                logger.info(f"已保存 aigc.json 配置文件，包含执行机IP和设备列表")
                             except Exception as e:
                                 logger.warning(f"保存 aigc.json 配置文件失败: {str(e)}")
                         else:
@@ -665,11 +641,9 @@ class ITCService:
                                     topox_file=default_topox_file,
                                     version_path=version_path,
                                     device_type=request.devicetype or "simware9cen",
-                                    executorip=executorip,
+                                    executorip=executorip
                                 )
-                                logger.info(
-                                    f"已保存 aigc.json 配置文件（不含设备列表）"
-                                )
+                                logger.info(f"已保存 aigc.json 配置文件（不含设备列表）")
                             except Exception as e:
                                 logger.warning(f"保存 aigc.json 配置文件失败: {str(e)}")
 
@@ -681,7 +655,7 @@ class ITCService:
                     logger.info("=" * 80)
                 else:
                     # 部署失败
-                    error_msg = str(result.get("return_info", "未知错误"))
+                    error_msg = str(result.get('return_info', '未知错误'))
                     logger.error(f"部署失败 - return_code: {result.get('return_code')}")
                     logger.error(f"错误信息: {error_msg}")
 
@@ -740,7 +714,7 @@ class ITCService:
             username = getpass.getuser()
             unc_topofile = f"\\\\10.144.41.149\\webide\\aigc_tool\\{username}"
             # 转换为正斜杠格式
-            unc_topofile = unc_topofile.replace("\\", "/")
+            unc_topofile = unc_topofile.replace('\\', '/')
             logger.info(f"使用 UNC 网络路径: {unc_topofile}")
 
             # 设置部署状态为 "deploying"
@@ -753,7 +727,7 @@ class ITCService:
             return {
                 "return_code": "200",
                 "return_info": "部署任务已提交，正在后台执行",
-                "result": None,
+                "result": None
             }
 
         except Exception as e:
@@ -761,11 +735,14 @@ class ITCService:
             return {
                 "return_code": "500",
                 "return_info": f"提交部署任务失败: {str(e)}",
-                "result": None,
+                "result": None
             }
 
     def start_background_deploy(
-        self, request: NewDeployRequest, default_topox_file: str, unc_topofile: str
+        self,
+        request: NewDeployRequest,
+        default_topox_file: str,
+        unc_topofile: str
     ) -> None:
         """启动后台部署任务的同步方法
 
@@ -780,7 +757,7 @@ class ITCService:
         thread = threading.Thread(
             target=self._execute_deploy_background,
             args=(request, default_topox_file, unc_topofile),
-            daemon=True,
+            daemon=True
         )
         thread.start()
         logger.info(f"后台部署线程已启动: {thread.name}")
@@ -811,7 +788,6 @@ class ITCService:
 
             # 查找并拷贝 test_*.py 脚本
             import glob
-
             test_scripts_pattern = os.path.join(work_dir, "test_*.py")
             test_scripts = glob.glob(test_scripts_pattern)
 
@@ -860,9 +836,7 @@ class ITCService:
 
     async def run_script(self, request: RunScriptRequest) -> Dict[str, Any]:
         """运行测试脚本"""
-        logger.info(
-            f"运行脚本请求 - scriptspath: {request.scriptspath}, executorip: {request.executorip}"
-        )
+        logger.info(f"运行脚本请求 - scriptspath: {request.scriptspath}, executorip: {request.executorip}")
 
         # 在调用 ITC run 前，拷贝工作目录中的 Python 脚本到目标目录
         try:
@@ -872,7 +846,10 @@ class ITCService:
         except Exception as e:
             logger.warning(f"拷贝 Python 脚本失败，但继续执行: {str(e)}")
 
-        data = {"scriptspath": request.scriptspath, "executorip": request.executorip}
+        data = {
+            "scriptspath": request.scriptspath,
+            "executorip": request.executorip
+        }
 
         logger.info(f"准备调用 ITC run 接口...")
         result = await self._make_request("run", data)
@@ -884,7 +861,9 @@ class ITCService:
 
     async def undeploy_environment(self, request: ExecutorRequest) -> SimpleResponse:
         """释放测试环境"""
-        data = {"executorip": request.executorip}
+        data = {
+            "executorip": request.executorip
+        }
 
         logger.info(f"释放环境请求: {data}")
         result = await self._make_request("undeploy", data)
@@ -895,15 +874,15 @@ class ITCService:
             self._cleanup_aigc_config_after_undeploy()
             logger.info("aigc.json 配置清理完成")
         else:
-            logger.warning(
-                f"undeploy 未成功 (return_code: {result.get('return_code')})，跳过配置清理"
-            )
+            logger.warning(f"undeploy 未成功 (return_code: {result.get('return_code')})，跳过配置清理")
 
         return SimpleResponse(**result)
 
     async def restore_configuration(self, request: ExecutorRequest) -> SimpleResponse:
         """配置回滚"""
-        data = {"executorip": request.executorip}
+        data = {
+            "executorip": request.executorip
+        }
 
         logger.info(f"配置回滚请求: {data}")
         result = await self._make_request("restoreconfiguration", data)
@@ -912,7 +891,9 @@ class ITCService:
 
     async def suspend_script(self, request: ExecutorRequest) -> SimpleResponse:
         """暂停脚本执行"""
-        data = {"executorip": request.executorip}
+        data = {
+            "executorip": request.executorip
+        }
 
         logger.info(f"暂停脚本请求: {data}")
         result = await self._make_request("suspend", data)
@@ -921,13 +902,14 @@ class ITCService:
 
     async def resume_script(self, request: ExecutorRequest) -> SimpleResponse:
         """恢复脚本执行"""
-        data = {"executorip": request.executorip}
+        data = {
+            "executorip": request.executorip
+        }
 
         logger.info(f"恢复脚本请求: {data}")
         result = await self._make_request("resume", data)
 
         return SimpleResponse(**result)
-
 
 # 创建 ITC 服务实例
 itc_service = ITCService()

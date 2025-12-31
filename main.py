@@ -18,13 +18,9 @@ if sys.version_info >= (3, 13) and sys.platform == "win32":
         # 设置使用 ProactorEventLoop 而不是 WindowsSelectorEventLoop
         # 这对于支持 subprocess 是必需的
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        print(
-            "[INFO] Python 3.13 + Windows detected: ProactorEventLoop enabled for subprocess support"
-        )
+        print("[INFO] Python 3.13 + Windows detected: ProactorEventLoop enabled for subprocess support")
     except AttributeError:
-        print(
-            "[WARNING] Cannot set WindowsProactorEventLoopPolicy (may not be Windows)"
-        )
+        print("[WARNING] Cannot set WindowsProactorEventLoopPolicy (may not be Windows)")
 # ============================================================
 
 # 添加项目根目录到Python路径
@@ -34,23 +30,41 @@ sys.path.insert(0, str(project_root))
 from app.core.config import settings
 from app.core.path_manager import path_manager
 
-
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="Script Generator API")
     parser.add_argument(
-        "--host", default=settings.HOST, help=f"服务器主机地址 (默认: {settings.HOST})"
+        "--host",
+        default=settings.HOST,
+        help=f"服务器主机地址 (默认: {settings.HOST})"
     )
     parser.add_argument(
         "--port",
         type=int,
         default=settings.PORT,
-        help=f"服务器端口 (默认: {settings.PORT})",
+        help=f"服务器端口 (默认: {settings.PORT})"
     )
-    parser.add_argument("--reload", action="store_true", help="启用自动重载 (开发模式)")
-    parser.add_argument("--debug", action="store_true", help="启用调试模式")
-    parser.add_argument("--work-dir", type=str, help="设置工作目录")
-    parser.add_argument("--workers", type=int, default=1, help="工作进程数量 (默认: 1)")
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="启用自动重载 (开发模式)"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="启用调试模式"
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=str,
+        help="设置工作目录"
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="工作进程数量 (默认: 1)"
+    )
 
     args = parser.parse_args()
 
@@ -75,7 +89,6 @@ def main():
     print(f"[INFO] API Docs: http://{args.host}:{args.port}/docs")
     print(f"[INFO] ReDoc: http://{args.host}:{args.port}/redoc")
     print(f"[INFO] Work Directory: {path_manager.get_project_root()}")
-    print(f"[INFO] Scripts Directory: {path_manager.get_scripts_dir()}")
     print(f"[INFO] Logs Directory: {path_manager.get_logs_dir()}")
     print(f"[INFO] Topo Directory: {path_manager.get_topox_dir()}")
     if args.reload:
@@ -100,14 +113,13 @@ def main():
             workers=args.workers if not args.reload else 1,
             log_level="debug" if args.debug else "info",
             access_log=True,
-            loop=loop,  # 明确指定事件循环类型
+            loop=loop  # 明确指定事件循环类型
         )
     except KeyboardInterrupt:
         print("\n[STOP] Server stopped")
     except Exception as e:
         print(f"[ERROR] Failed to start: {e}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

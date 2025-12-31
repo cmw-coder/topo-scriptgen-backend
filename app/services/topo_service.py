@@ -1,26 +1,26 @@
-import xml.etree.ElementTree as ElementTree
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import logging
 import shutil
 import os
+from typing import Optional
 
 from app.core.path_manager import path_manager
-from app.models.topox import Network, Device, Link, TopoxRequest, TopoxResponse
+from app.models.topo import Network, Device, Link, TopoxRequest, TopoxResponse
 from app.utils.user_context import user_context
 
 logger = logging.getLogger(__name__)
 
-
 class TopoService:
     """拓扑服务，处理topox文件的保存和转换
-
-    AI_FingerPrint_UUID: 20251225-LWJLVNvB
-    """
+    
+AI_FingerPrint_UUID: 20251225-LWJLVNvB
+"""
 
     def __init__(self):
         self.path_manager = path_manager
 
-    def _indent(self, elem: ElementTree.Element, level: int = 0) -> None:
+    def _indent(self, elem: ET.Element, level: int = 0) -> None:
         """美化XML格式，进行缩进处理"""
         indent_str = "  "
         i = "\n" + level * indent_str
@@ -38,31 +38,31 @@ class TopoService:
     def build_topox_xml(self, request: TopoxRequest) -> str:
         """将请求转换为topox XML字符串"""
         try:
-            network_elem = ElementTree.Element("NETWORK")
+            network_elem = ET.Element("NETWORK")
 
             network = request.network
             device_list = network.device_list or []
             link_list = network.link_list or []
 
             # 添加设备列表
-            device_list_elem = ElementTree.SubElement(network_elem, "DEVICE_LIST")
+            device_list_elem = ET.SubElement(network_elem, "DEVICE_LIST")
             for device in device_list:
-                device_elem = ElementTree.SubElement(device_list_elem, "DEVICE")
-                prop_elem = ElementTree.SubElement(device_elem, "PROPERTY")
-                ElementTree.SubElement(prop_elem, "NAME").text = device.name or ""
-                ElementTree.SubElement(prop_elem, "TYPE").text = "Simware9"
-                ElementTree.SubElement(prop_elem, "ENABLE").text = "TRUE"
-                ElementTree.SubElement(prop_elem, "IS_DOUBLE_MCU").text = "FALSE"
-                ElementTree.SubElement(prop_elem, "IS_SINGLE_MCU").text = "FALSE"
-                ElementTree.SubElement(prop_elem, "IS_SAME_DUT_TYPE").text = "FALSE"
-                ElementTree.SubElement(prop_elem, "MAP_PRIORITY").text = "0"
-                ElementTree.SubElement(prop_elem, "IS_DUT").text = "true"
-                ElementTree.SubElement(prop_elem, "LOCATION").text = device.location or ""
+                device_elem = ET.SubElement(device_list_elem, "DEVICE")
+                prop_elem = ET.SubElement(device_elem, "PROPERTY")
+                ET.SubElement(prop_elem, "NAME").text = device.name or ""
+                ET.SubElement(prop_elem, "TYPE").text = "Simware9"
+                ET.SubElement(prop_elem, "ENABLE").text = "TRUE"
+                ET.SubElement(prop_elem, "IS_DOUBLE_MCU").text = "FALSE"
+                ET.SubElement(prop_elem, "IS_SINGLE_MCU").text = "FALSE"
+                ET.SubElement(prop_elem, "IS_SAME_DUT_TYPE").text = "FALSE"
+                ET.SubElement(prop_elem, "MAP_PRIORITY").text = "0"
+                ET.SubElement(prop_elem, "IS_DUT").text = "true"
+                ET.SubElement(prop_elem, "LOCATION").text = device.location or ""
 
             # 添加链路列表
-            link_list_elem = ElementTree.SubElement(network_elem, "LINK_LIST")
+            link_list_elem = ET.SubElement(network_elem, "LINK_LIST")
             for link in link_list:
-                link_elem = ElementTree.SubElement(link_list_elem, "LINK")
+                link_elem = ET.SubElement(link_list_elem, "LINK")
                 start_device = link.start_device or ""
                 end_device = link.end_device or ""
                 start_port = link.start_port or ""
@@ -72,20 +72,18 @@ class TopoService:
                     (start_device, start_port),
                     (end_device, end_port),
                 ):
-                    node_elem = ElementTree.SubElement(link_elem, "NODE")
-                    ElementTree.SubElement(node_elem, "DEVICE").text = device_name
-                    port_elem = ElementTree.SubElement(node_elem, "PORT")
-                    ElementTree.SubElement(port_elem, "NAME").text = port_name
-                    ElementTree.SubElement(port_elem, "TYPE").text = ""
-                    ElementTree.SubElement(port_elem, "IPAddr").text = ""
-                    ElementTree.SubElement(port_elem, "IPv6Addr").text = ""
-                    ElementTree.SubElement(port_elem, "SLOT_TYPE").text = ""
-                    ElementTree.SubElement(port_elem, "TAG").text = ""
+                    node_elem = ET.SubElement(link_elem, "NODE")
+                    ET.SubElement(node_elem, "DEVICE").text = device_name
+                    port_elem = ET.SubElement(node_elem, "PORT")
+                    ET.SubElement(port_elem, "NAME").text = port_name
+                    ET.SubElement(port_elem, "TYPE").text = ""
+                    ET.SubElement(port_elem, "IPAddr").text = ""
+                    ET.SubElement(port_elem, "IPv6Addr").text = ""
+                    ET.SubElement(port_elem, "SLOT_TYPE").text = ""
+                    ET.SubElement(port_elem, "TAG").text = ""
 
             self._indent(network_elem)
-            xml_bytes = ElementTree.tostring(
-                network_elem, encoding="utf-8", xml_declaration=True
-            )
+            xml_bytes = ET.tostring(network_elem, encoding="utf-8", xml_declaration=True)
             return xml_bytes.decode("utf-8")
 
         except Exception as e:
@@ -101,7 +99,7 @@ class TopoService:
                 logger.warning("XML内容为空，返回空的Network对象")
                 return network
 
-            root = ElementTree.fromstring(xml_text)
+            root = ET.fromstring(xml_text)
 
             # 解析设备列表
             device_list_elem = root.find("DEVICE_LIST")
@@ -114,9 +112,7 @@ class TopoService:
                         name_elem = prop_elem.find("NAME")
                         location_elem = prop_elem.find("LOCATION")
                         device_name = name_elem.text if name_elem is not None else ""
-                        device_location = (
-                            location_elem.text if location_elem is not None else ""
-                        )
+                        device_location = location_elem.text if location_elem is not None else ""
 
                     if device_name:  # 只添加有名称的设备
                         network.device_list.append(
@@ -131,15 +127,11 @@ class TopoService:
                     if len(nodes) < 2:
                         continue
 
-                    def _node_details(node: ElementTree.Element) -> tuple[str, str]:
+                    def _node_details(node: ET.Element) -> tuple[str, str]:
                         device_elem = node.find("DEVICE")
                         port_name_elem = node.find("PORT/NAME")
-                        device_name = (
-                            device_elem.text if device_elem is not None else ""
-                        )
-                        port_name = (
-                            port_name_elem.text if port_name_elem is not None else ""
-                        )
+                        device_name = device_elem.text if device_elem is not None else ""
+                        port_name = port_name_elem.text if port_name_elem is not None else ""
                         return device_name or "", port_name or ""
 
                     start_device, start_port = _node_details(nodes[0])
@@ -152,22 +144,20 @@ class TopoService:
                                 start_device=start_device,
                                 start_port=start_port,
                                 end_device=end_device,
-                                end_port=end_port,
+                                end_port=end_port
                             )
                         )
 
             return network
 
-        except ElementTree.ParseError as e:
+        except ET.ParseError as e:
             logger.error(f"解析topox XML失败: {str(e)}")
             raise ValueError(f"XML解析错误: {str(e)}")
         except Exception as e:
             logger.error(f"解析topox XML时发生未知错误: {str(e)}")
             raise
 
-    async def save_topox(
-        self, request: TopoxRequest, filename: str = "default.topox"
-    ) -> TopoxResponse:
+    async def save_topox(self, request: TopoxRequest, filename: str = "default.topox") -> TopoxResponse:
         """保存topox文件"""
         try:
             # 构建XML内容
@@ -195,7 +185,7 @@ class TopoService:
             return TopoxResponse(
                 network=request.network,
                 xml_content=xml_content,
-                file_path=str(file_path),
+                file_path=str(file_path)
             )
 
         except Exception as e:
@@ -214,7 +204,7 @@ class TopoService:
                 return TopoxResponse(
                     network=Network(device_list=[], link_list=[]),
                     xml_content=None,
-                    file_path=str(file_path),
+                    file_path=str(file_path)
                 )
 
             # 读取文件内容
@@ -226,10 +216,12 @@ class TopoService:
             logger.info(f"成功加载topox文件: {file_path}")
 
             return TopoxResponse(
-                network=network, xml_content=xml_content, file_path=str(file_path)
+                network=network,
+                xml_content=xml_content,
+                file_path=str(file_path)
             )
 
-        except ElementTree.ParseError as e:
+        except ET.ParseError as e:
             logger.error(f"topox文件XML格式错误: {file_path}, 错误: {str(e)}")
             raise ValueError(f"topox文件格式错误: {str(e)}")
         except Exception as e:
@@ -264,7 +256,10 @@ class TopoService:
                 return []
 
             # 列出所有.topox文件
-            topox_files = [f.name for f in topox_dir.glob("*.topox") if f.is_file()]
+            topox_files = [
+                f.name for f in topox_dir.glob("*.topox")
+                if f.is_file()
+            ]
 
             return sorted(topox_files)
 
@@ -311,7 +306,6 @@ class TopoService:
         except Exception as e:
             logger.error(f"复制文件到 AIGC 目标目录失败: {str(e)}")
             raise
-
 
 # 创建topo服务实例
 topo_service = TopoService()

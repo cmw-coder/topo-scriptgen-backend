@@ -6,20 +6,18 @@ from pytest_atf.atf_globalvar import globalVar as gl
 
 # 执行层及使用拓扑文件名称
 level = 3
-topo = r"default.topox"
-
+topo = r'default.topox'
 
 # 用于声明脚本共用的变量或方法，不能修改类名。
 # 变量或方法都要定义为类属性，不要定义为实例属性。
 class CVarsAndFuncs:
     pass
 
-
 # 不能删除setup/teardown的装饰器
 @atf_time_stats("ATFSetupTime")
 @atf_adornment
 def setup():
-    """
+    '''
     BGP Add-Path测试场景初始化配置
 
     场景说明:
@@ -30,10 +28,9 @@ def setup():
 
     组网拓扑:
         default.topox
-    """
+    '''
     # 配置DUT1设备
-    gl.DUT1.send(
-        f"""
+    gl.DUT1.send(f'''
         ctrl+z
         system-view
         # 配置Loopback接口
@@ -80,12 +77,10 @@ def setup():
         peer 14.1.1.2 advertise additional-paths best 3
         quit
         quit
-    """
-    )
+    ''')
 
     # 配置DUT2设备
-    gl.DUT2.send(
-        f"""
+    gl.DUT2.send(f'''
         ctrl+z
         system-view
         # 配置Loopback接口
@@ -121,12 +116,10 @@ def setup():
         import-route static
         quit
         quit
-    """
-    )
+    ''')
 
     # 配置DUT3设备
-    gl.DUT3.send(
-        f"""
+    gl.DUT3.send(f'''
         ctrl+z
         system-view
         # 配置Loopback接口
@@ -150,19 +143,16 @@ def setup():
         peer 14.1.1.1 additional-paths receive
         quit
         quit
-    """
-    )
-
+    ''')
 
 @atf_time_stats("ATFTeardownTime")
 @atf_adornment
 def teardown():
-    """
+    '''
     清除BGP Add-Path测试场景配置
-    """
+    '''
     # 清除DUT1配置
-    gl.DUT1.send(
-        f"""
+    gl.DUT1.send(f'''
         ctrl+z
         system-view
         undo bgp 100
@@ -180,12 +170,10 @@ def teardown():
         interface {gl.DUT1.PORT4.intf}
         undo ip address
         quit
-    """
-    )
+    ''')
 
     # 清除DUT2配置
-    gl.DUT2.send(
-        f"""
+    gl.DUT2.send(f'''
         ctrl+z
         system-view
         undo bgp 100
@@ -201,12 +189,10 @@ def teardown():
         interface {gl.DUT2.PORT3.intf}
         undo ip address
         quit
-    """
-    )
+    ''')
 
     # 清除DUT3配置
-    gl.DUT3.send(
-        f"""
+    gl.DUT3.send(f'''
         ctrl+z
         system-view
         undo bgp 100
@@ -215,12 +201,9 @@ def teardown():
         interface {gl.DUT3.PORT4.intf}
         undo ip address
         quit
-    """
-    )
-
+    ''')
 
 # ---------END-----------
-
 
 @fixture(scope="package", autouse=True)
 def my_fixture_setup_and_teardown():
@@ -250,8 +233,7 @@ def VarsAndFuncs():
             该路由为最佳路由
         """
         # 修改DUT1配置为advertise best 2
-        gl.DUT1.send(
-            """
+        gl.DUT1.send('''
             ctrl+z
             system-view
             bgp 100
@@ -262,15 +244,14 @@ def VarsAndFuncs():
             #
             quit
             quit
-        """
-        )
+        ''')
 
         # 验证DUT3收到1条路由(最佳路由)
         gl.DUT3.CheckCommand(
-            "DUT3验证Add-Path路由条数为1",
-            cmd="display bgp routing-table ipv4 192.168.1.0 24",
-            expect=["192.168.1.0"],
+            'DUT3验证Add-Path路由条数为1',
+            cmd='display bgp routing-table ipv4 192.168.1.0 24',
+            expect=['192.168.1.0'],
             not_expect=[],
             stop_max_attempt=5,
-            wait_fixed=10,
+            wait_fixed=10
         )

@@ -6,20 +6,19 @@ import traceback
 from typing import Any, Dict, List, Union
 from pathlib import Path
 
-
 class LOGPROCESS:
-    def __init__(self, log_path: str):
+    def __init__(self, log_path:str):
         self.log_path = log_path
         self.script_commands_info = []
 
     def read_json_file(self, file_path) -> Any:
         """读取 JSON 文件"""
         path = Path(file_path)
-
+        
         if not path.exists():
             raise FileNotFoundError(f"文件夹不存在: {file_path}")
-
-        with open(file_path, "r", encoding="utf-8") as file:
+        
+        with open(file_path, 'r', encoding='utf-8') as file:
             return json.load(file)
 
     def get_script_name(self, file_path):
@@ -34,49 +33,48 @@ class LOGPROCESS:
     def extract_and_split_commands(self, param_string):
         """
         从函数参数字符串中提取第一个括号中的内容，并按换行符分割成命令列表
-
+        
         Args:
             param_string: 函数参数字符串，如 "函数入参：('aaa.cfg',),{}"
-
+            
         Returns:
             list: 分割后的命令列表，每个命令已去除前后空格和单引号
         """
         try:
             # 匹配括号内的内容（包括多行）
-            match = re.search(r"\(\s*(.*?)\s*\)", param_string, re.DOTALL)
+            match = re.search(r'\(\s*(.*?)\s*\)', param_string, re.DOTALL)
 
             if not match:
                 return []
-
+            
             content = match.group(1).strip()
-
+            
             # 去除外层引号（支持单引号和双引号）
-            if (content.startswith("'") and content.endswith("'")) or (
-                content.startswith('"') and content.endswith('"')
-            ):
+            if (content.startswith("'") and content.endswith("'")) or \
+               (content.startswith('"') and content.endswith('"')):
                 content = content[1:-1]
-
+            
             # 去除末尾的逗号（如果有）
-            if content.endswith(","):
+            if content.endswith(','):
                 content = content[:-1].strip()
-
+            
             # 按换行符分割并处理每个命令
             commands = []
-            for cmd in content.split("\n"):
+            for cmd in content.split('\n'):
                 cmd = cmd.strip()
                 if not cmd:
                     continue
-
+                
                 # 使用正则表达式去除所有引号（包括不匹配的）
                 # 移除所有单引号和双引号
                 cmd = re.sub(r"^['\"]+|['\"]+$", "", cmd)
                 cmd = cmd.strip()
-
+                
                 if cmd:  # 确保不为空
                     commands.append(cmd)
-
+            
             return commands
-
+            
         except Exception as e:
             print(f"提取命令时出错: {e}")
             return []
@@ -84,101 +82,107 @@ class LOGPROCESS:
     def parse_layer_info(self, input_string):
         """
         解析层信息字符串，按顺序提取信息生成列表
-
+        
         Args:
             input_string: 格式如 "class_layer=1 step_layer=setup layer1=2 layer2=1" 的字符串
-
+        
         Returns:
             list: 按顺序提取的值列表
         """
         result = []
-
+        
         # 按空格分割字符串得到键值对
         pairs = input_string.split()
-
+        
         for pair in pairs:
             # 按等号分割键值对
-            if "=" in pair:
-                key, value = pair.split("=", 1)
+            if '=' in pair:
+                key, value = pair.split('=', 1)
                 result.append(value)
         return result
-
+        
     def extract_dut_from_title(self, title_data):
         """
         从 Title 列表中提取 DUT 信息
         """
         if not title_data or len(title_data) < 2:
             return None
-
+        
         # 获取第二个元素（索引为1）
         title_string = title_data[1]
-
+        
         # 查找 DUT 信息（假设格式为 "DUTX(描述)"）
         if "DUT" in title_string:
             # 提取 DUT1 这样的标识符
             import re
-
-            match = re.search(r"DUT\d+", title_string)
+            match = re.search(r'DUT\d+', title_string)
             if match:
                 return match.group()
-
+        
         return None
 
     def get_expect_string(self, check_res):
         """
         从文本中提取回显信息中的包含/不包含字段内容
-
+        
         参数:
             text: 输入的字符串文本
-
+            
         返回:
             list: 包含所有提取结果的列表，每个元素是一个字典，包含字段类型和内容
         """
         results = []
-
+        
         # 按换行符分割文本
-        lines = check_res.split("\n")
-
+        lines = check_res.split('\n')
+        
         for line in lines:
             # 查找"回显信息"字段
             if "回显信息 包含" in line:
                 # 找到"包含"后面的内容
                 start_idx = line.find("包含")
                 if start_idx != -1:
-                    content = line[start_idx + 2 :]  # 跳过"包含"两个字符
-                    content = content.rstrip("！")
+                    content = line[start_idx + 2:]  # 跳过"包含"两个字符
+                    content = content.rstrip('！')
                     content = content.strip()
                     if content:  # 如果内容不为空
-                        results.append({"type": "包含", "content": content})
+                        results.append({
+                            'type': '包含',
+                            'content': content
+                        })
             if "回显信息 出现" in line:
                 # 找到"包含"后面的内容
                 start_idx = line.find("出现")
                 if start_idx != -1:
-                    content = line[start_idx + 2 :]
+                    content = line[start_idx + 2:]
                     if "的次数为" in content:
                         count_idx = content.find("的次数为")
                         if count_idx != -1:
                             content_part = content[:count_idx].strip()
                             if content_part:
-                                results.append(
-                                    {"type": "包含", "content": content_part}
-                                )
+                                results.append({
+                                    'type': '包含',
+                                    'content': content_part
+                                })
             # 查找"不包含"字段
             if "回显信息 不包含" in line:
                 print(line)
                 # 找到"不包含"后面的内容
                 start_idx = line.find("不包含")
                 if start_idx != -1:
-                    content = line[start_idx + 3 :]  # 跳过"不包含"三个字符
-                    content = content.rstrip("！")
+                    content = line[start_idx + 3:]  # 跳过"不包含"三个字符
+                    content = content.rstrip('！')
                     print(f"content:{content}")
                     content = content.strip()  # 剔除前后空格
                     if content:  # 如果内容不为空
-                        results.append({"type": "不包含", "content": content})
-
+                        results.append({
+                            'type': '不包含',
+                            'content': content
+                        })
+        
         return results
 
-    def base_log_info_get(self, log_dict):
+    def base_log_info_get(self,log_dict):
         log_info = {}
         if "Parameter" in log_dict:
             lay_list = self.parse_layer_info(log_dict["layer"])
@@ -203,9 +207,9 @@ class LOGPROCESS:
                 send_info["expect"] = []
                 send_info["exec_res"] = exec_res
                 send_info.update(log_info)
-
+                
         return send_info
-
+        
     def check_command_info_get(self, check_log):
         check_info = {}
         is_first = 0
@@ -240,14 +244,14 @@ class LOGPROCESS:
                     if isinstance(check_exec_info, dict):
                         check_res = check_exec_info["CheckResult"]
                         expect_info_list = self.get_expect_string(check_res)
-                        # print(f"key:{key}, check_res:{check_res}")
+                        #print(f"key:{key}, check_res:{check_res}")
                         check_info["expect"] = expect_info_list
             check_info["exec_res"] = last_check_dict["Result"]
 
-        # print(check_info["expect"])
+        #print(check_info["expect"])
         return check_info
 
-    def conftest_command_info_get(self, info_dict, flag, teardown_send_flag=0):
+    def conftest_command_info_get(self, info_dict, flag, teardown_send_flag = 0):
         result = []
         if "setup" == flag or 0 == teardown_send_flag:
             if isinstance(info_dict, dict):
@@ -265,7 +269,7 @@ class LOGPROCESS:
                 else:
                     if "all_cmds_response" in info_dict:
                         check_info = self.send_info_get(info_dict)
-                        # print(check_info)
+                        #print(check_info)
                         check_info["func"] = flag
                         result.append(check_info)
         if "teardown" == flag and 1 == teardown_send_flag:
@@ -292,7 +296,7 @@ class LOGPROCESS:
                         check_info["func"] = "setup"
                         result.append(check_info)
         return result
-
+        
     def get_teardown_info(self, stepLists):
         result = []
         if not stepLists:
@@ -312,7 +316,7 @@ class LOGPROCESS:
                         result.append(check_info)
         return result
 
-    def get_step_info(self, steps):
+    def get_step_info(self,steps):
         result = []
         step_num = 0
         if isinstance(steps, dict):
@@ -393,82 +397,79 @@ class LOGPROCESS:
         """
         处理包含lay_list的字典列表，按指定规则排序
         """
-        # print(data_list)
+        #print(data_list)
         valid_items = []
         for item in data_list:
-            if (
-                isinstance(item, dict)
-                and "lay_list" in item
-                and isinstance(item["lay_list"], list)
-                and len(item["lay_list"]) >= 3
-                and item.get("func") == func
-            ):
+            if (isinstance(item, dict) and 
+                'lay_list' in item and 
+                isinstance(item['lay_list'], list) and 
+                len(item['lay_list']) >= 3 and 
+                item.get("func") == func):
                 valid_items.append(item)
 
         # 先按前两个数值排序，长度不同的情况特殊处理
         def custom_sort_key(item):
-            lay_list = item["lay_list"]
+            lay_list = item['lay_list']
             sort_elements = lay_list[2:]
-
+            
             # 将元素转换为可比较的数字
             numeric_elements = []
             for elem in sort_elements:
                 try:
                     numeric_elements.append(float(elem))
                 except (ValueError, TypeError):
-                    numeric_elements.append(float("inf"))
-
+                    numeric_elements.append(float('inf'))
+            
             # 返回一个元组：前两个数值 + 长度信息（确保数值比较优先）
             return (
-                numeric_elements[0] if len(numeric_elements) > 0 else float("inf"),
-                numeric_elements[1] if len(numeric_elements) > 1 else float("inf"),
-                len(lay_list),  # 最后考虑长度
-            )
-
+                    numeric_elements[0] if len(numeric_elements) > 0 else float('inf'),
+                    numeric_elements[1] if len(numeric_elements) > 1 else float('inf'),
+                    len(lay_list)  # 最后考虑长度
+                )
+        
         sorted_items = sorted(valid_items, key=custom_sort_key)
         return sorted_items
 
     def process_single_step_list(self, data_list):
         valid_items = data_list
-
         # 先按前两个数值排序，长度不同的情况特殊处理
         def custom_sort_key(item):
-            lay_list = item["lay_list"]
+            lay_list = item['lay_list']
             sort_elements = lay_list[1:]
-
+            
             # 将元素转换为可比较的数字
             numeric_elements = []
             for elem in sort_elements:
                 try:
                     numeric_elements.append(float(elem))
                 except (ValueError, TypeError):
-                    numeric_elements.append(float("inf"))
-
+                    numeric_elements.append(float('inf'))
+            
             # 返回一个元组：前两个数值 + 长度信息（确保数值比较优先）
             return (
-                numeric_elements[0] if len(numeric_elements) > 0 else float("inf"),
-                numeric_elements[1] if len(numeric_elements) > 1 else float("inf"),
-                len(lay_list),  # 最后考虑长度
+                numeric_elements[0] if len(numeric_elements) > 0 else float('inf'),
+                numeric_elements[1] if len(numeric_elements) > 1 else float('inf'),
+                len(lay_list)  # 最后考虑长度
             )
-
+        
         sorted_items = sorted(valid_items, key=custom_sort_key)
         return sorted_items
-
+        
     def process_step_list(self, data_list):
         """
         处理包含lay_list的列表，按指定规则排序
-
+        
         Args:
             data_list: 包含lay_list项的列表
-
+        
         Returns:
             list: 排序后的结果
         """
         # 筛选出符合条件的字典
         total_step_dict = {}
         for item in data_list:
-            if item.get("func") != "setup" and item.get("func") != "teardown":
-                # 不是真正的step_name,而是step_1,step_2
+            if item.get("func") != 'setup' and item.get("func") != 'teardown':
+                #不是真正的step_name,而是step_1,step_2
                 step_seq = item.get("step_seq")
                 step_name = f"step_{step_seq}"
                 if step_name in total_step_dict:
@@ -478,7 +479,7 @@ class LOGPROCESS:
                     total_step_dict[step_name].append(item)
 
         step_nums = len(total_step_dict)
-        for i in range(1, step_nums + 1):
+        for i in range(1,step_nums+1):
             step_name = f"step_{i}"
             if step_name in total_step_dict:
                 step_data_list = total_step_dict[step_name]
@@ -490,10 +491,10 @@ class LOGPROCESS:
     def process_conftest_setup_list(self, data_list):
         """
         处理包含lay_list的列表，按指定规则排序
-
+        
         Args:
             data_list: 包含lay_list项的列表
-
+        
         Returns:
             list: 排序后的结果
         """
@@ -508,38 +509,38 @@ class LOGPROCESS:
         for item in data_list:
             # 检查1: 是否是字典
             if not isinstance(item, dict):
-                # print(item)
+                #print(item)
                 break
-
+            
             # 检查2: 是否包含'lay_list'键
-            if "lay_list" not in item:
+            if 'lay_list' not in item:
                 continue
-
+            
             # 检查3: 'lay_list'的值是否是列表
-            if not isinstance(item["lay_list"], list):
+            if not isinstance(item['lay_list'], list):
                 continue
-
+            
             # 所有条件都满足，添加到结果列表
             valid_items.append(item)
 
         # 先按前两个数值排序，长度不同的情况特殊处理
         def custom_sort_key(item):
-            lay_list = item["lay_list"]
+            lay_list = item['lay_list']
             sort_elements = lay_list[0:]
-
+            
             # 将元素转换为可比较的数字
             numeric_elements = []
             for elem in sort_elements:
                 try:
                     numeric_elements.append(float(elem))
                 except (ValueError, TypeError):
-                    numeric_elements.append(float("inf"))
-
+                    numeric_elements.append(float('inf'))
+            
             # 返回一个元组：前两个数值 + 长度信息（确保数值比较优先）
             return (
-                numeric_elements[0] if len(numeric_elements) > 0 else float("inf"),
-                numeric_elements[1] if len(numeric_elements) > 1 else float("inf"),
-                len(lay_list),  # 最后考虑长度
+                numeric_elements[0] if len(numeric_elements) > 0 else float('inf'),
+                numeric_elements[1] if len(numeric_elements) > 1 else float('inf'),
+                len(lay_list)  # 最后考虑长度
             )
 
         sorted_items = sorted(valid_items, key=custom_sort_key)
@@ -548,68 +549,66 @@ class LOGPROCESS:
     def process_conftest_teardown_list(self, data_list):
         """
         处理包含lay_list的列表，按指定规则排序
-
+        
         Args:
             data_list: 包含lay_list项的列表
-
+        
         Returns:
             list: 排序后的结果
         """
         # 筛选出符合条件的字典
-        valid_items = [
-            item
-            for item in data_list
-            if isinstance(item, dict)
-            and "lay_list" in item
-            and isinstance(item["lay_list"], list)
-            and len(item["lay_list"]) >= 3
-        ]
-
+        valid_items = [item for item in data_list 
+                       if isinstance(item, dict) and 
+                          'lay_list' in item and 
+                          isinstance(item['lay_list'], list) and
+                          len(item['lay_list']) >= 3]
+        
         # 先按前两个数值排序，长度不同的情况特殊处理
         def custom_sort_key(item):
-            lay_list = item["lay_list"]
+            lay_list = item['lay_list']
             sort_elements = lay_list[2:]
-
+            
             # 将元素转换为可比较的数字
             numeric_elements = []
             for elem in sort_elements:
                 try:
                     numeric_elements.append(float(elem))
                 except (ValueError, TypeError):
-                    numeric_elements.append(float("inf"))
-
+                    numeric_elements.append(float('inf'))
+            
             # 返回一个元组：前两个数值 + 长度信息（确保数值比较优先）
             return (
-                numeric_elements[0] if len(numeric_elements) > 0 else float("inf"),
-                numeric_elements[1] if len(numeric_elements) > 1 else float("inf"),
-                len(lay_list),  # 最后考虑长度
+                numeric_elements[0] if len(numeric_elements) > 0 else float('inf'),
+                numeric_elements[1] if len(numeric_elements) > 1 else float('inf'),
+                len(lay_list)  # 最后考虑长度
             )
-
+        
         sorted_items = sorted(valid_items, key=custom_sort_key)
         return sorted_items
 
     def process_conftest_list(self, data_list, flag):
         sorted_items = []
         if "setup" == flag:
-            # print(data_list)
+            #print(data_list)
             sorted_items = self.process_conftest_setup_list(data_list)
-            # print(sorted_items)
+            #print(sorted_items)
         elif "teardown" == flag:
             sorted_items = self.process_conftest_teardown_list(data_list)
         return sorted_items
 
+
     def match_command_and_exe_info(self, data):
         res = []
-        commands = data["send_commands"]
-        exec_info = data["exec_info"]
-        exec_res = data["exec_res"]
-        check_expect = data["expect"]
+        commands = data['send_commands']
+        exec_info = data['exec_info']
+        exec_res = data['exec_res']
+        check_expect = data['expect']
         for command in commands:
             info_dict = {}
-            info_dict["cmd"] = command
-            info_dict["exec_info"] = exec_info
-            info_dict["exec_res"] = exec_res
-            info_dict["expect"] = check_expect
+            info_dict['cmd'] = command
+            info_dict['exec_info'] = exec_info
+            info_dict['exec_res'] = exec_res
+            info_dict['expect'] = check_expect
             res.append(info_dict)
         return res
 
@@ -641,7 +640,7 @@ class LOGPROCESS:
                 commands_info = self.match_command_and_exe_info(item)
                 single_dut_command[dut_name].extend(commands_info)
             else:
-                dut_list.append(single_dut_command)
+                dut_list.append(single_dut_command) 
                 pre_dut_name = dut_name
                 single_dut_command = {}
                 single_dut_command[dut_name] = []
@@ -655,18 +654,18 @@ class LOGPROCESS:
 
     def command_arrange(self, data_list):
         res = {}
-        # print(data_list)
-        sorted_up_lists = self.process_up_or_down_list(data_list, "setup")
-        sorted_down_lists = self.process_up_or_down_list(data_list, "teardown")
+        #print(data_list)
+        sorted_up_lists = self.process_up_or_down_list(data_list, 'setup')
+        sorted_down_lists = self.process_up_or_down_list(data_list, 'teardown')
         total_step_dict = self.process_step_list(data_list)
-        # print(sorted_up_lists)
+        #print(sorted_up_lists)
         setup_res = self.gen_command_info(sorted_up_lists)
         res.update(setup_res)
         down_res = self.gen_command_info(sorted_down_lists)
         res.update(down_res)
         step_nums = len(total_step_dict)
-        # step需要包含执行信息
-        for i in range(1, step_nums + 1):
+        #step需要包含执行信息
+        for i in range(1,step_nums+1):
             step_name = f"step_{i}"
             if step_name in total_step_dict:
                 step_res = self.gen_command_info(total_step_dict[step_name])
@@ -738,14 +737,12 @@ class LOGPROCESS:
     def splice_commmand_info(self, json_data, log_info):
         splice_res = ""
         func_description = self.get_func_description(json_data)
-        # print(func_description)
+        #print(func_description)
         if isinstance(log_info, dict):
             if "setup" in log_info:
                 splice_res = splice_res + "!!!func setup\n"
-                if "setup" in func_description:
-                    splice_res = (
-                        splice_res + "<" + func_description["setup"] + ">" + "\n"
-                    )
+                if "setup" in func_description: 
+                    splice_res = splice_res + "<" + func_description["setup"] + ">" + "\n"
                 setup_info = log_info["setup"]
                 for dut_info in setup_info:
                     for dut_key, dut_value in dut_info.items():
@@ -754,68 +751,33 @@ class LOGPROCESS:
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
                             if "FAIL" == dut_commond["exec_res"]:
-                                splice_res = (
-                                    splice_res
-                                    + "命令执行失败: "
-                                    + dut_commond["cmd"]
-                                    + "\n"
-                                )
+                                splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                             else:
                                 splice_res = splice_res + dut_commond["cmd"] + "\n"
-                            if dut_commond["expect"]:
+                            if dut_commond['expect']:
                                 include_str = ""
                                 not_include_str = ""
-                                for expect_info in dut_commond["expect"]:
-                                    if "包含" == expect_info["type"]:
+                                for expect_info in dut_commond['expect']:
+                                    if '包含' == expect_info['type']:
                                         if include_str:
-                                            include_str = (
-                                                include_str
-                                                + ","
-                                                + expect_info["content"]
-                                            )
+                                            include_str = include_str + ',' + expect_info['content']
                                         else:
-                                            include_str = (
-                                                include_str
-                                                + "期望显示:"
-                                                + expect_info["content"]
-                                            )
+                                            include_str = include_str + "期望显示:" + expect_info['content']
                                     else:
                                         if not_include_str:
-                                            not_include_str = (
-                                                include_str
-                                                + ","
-                                                + expect_info["content"]
-                                            )
+                                            not_include_str = include_str + ',' + expect_info['content']
                                         else:
-                                            not_include_str = (
-                                                include_str
-                                                + "不期望显示:"
-                                                + expect_info["content"]
-                                            )
+                                            not_include_str = include_str + "不期望显示:" + expect_info['content']
                                 if include_str and not not_include_str:
-                                    splice_res = (
-                                        splice_res + "(" + include_str + ")" + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + include_str + ")" +"\n"
                                 elif not_include_str and not include_str:
-                                    splice_res = (
-                                        splice_res + "(" + not_include_str + ")" + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + not_include_str + ")" +"\n"
                                 elif include_str and not_include_str:
-                                    splice_res = (
-                                        splice_res
-                                        + "("
-                                        + include_str
-                                        + ","
-                                        + not_include_str
-                                        + ")"
-                                        + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + include_str + "," + not_include_str + ")" +"\n"
             if "teardown" in log_info:
                 splice_res = splice_res + "!!!func teardown\n"
-                if "teardown" in func_description:
-                    splice_res = (
-                        splice_res + "<" + func_description["teardown"] + ">" + "\n"
-                    )
+                if "teardown" in func_description: 
+                    splice_res = splice_res + "<" + func_description["teardown"] + ">" + "\n"
                 teardown_info = log_info["teardown"]
                 for dut_info in teardown_info:
                     for dut_key, dut_value in dut_info.items():
@@ -824,62 +786,29 @@ class LOGPROCESS:
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
                             if "FAIL" == dut_commond["exec_res"]:
-                                splice_res = (
-                                    splice_res
-                                    + "命令执行失败: "
-                                    + dut_commond["cmd"]
-                                    + "\n"
-                                )
+                                splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                             else:
                                 splice_res = splice_res + dut_commond["cmd"] + "\n"
-                            if dut_commond["expect"]:
+                            if dut_commond['expect']:
                                 include_str = ""
                                 not_include_str = ""
-                                for expect_info in dut_commond["expect"]:
-                                    if "包含" == expect_info["type"]:
+                                for expect_info in dut_commond['expect']:
+                                    if '包含' == expect_info['type']:
                                         if include_str:
-                                            include_str = (
-                                                include_str
-                                                + ","
-                                                + expect_info["content"]
-                                            )
+                                            include_str = include_str + ',' + expect_info['content']
                                         else:
-                                            include_str = (
-                                                include_str
-                                                + "期望显示:"
-                                                + expect_info["content"]
-                                            )
+                                            include_str = include_str + "期望显示:" + expect_info['content']
                                     else:
                                         if not_include_str:
-                                            not_include_str = (
-                                                include_str
-                                                + ","
-                                                + expect_info["content"]
-                                            )
+                                            not_include_str = include_str + ',' + expect_info['content']
                                         else:
-                                            not_include_str = (
-                                                include_str
-                                                + "不期望显示:"
-                                                + expect_info["content"]
-                                            )
+                                            not_include_str = include_str + "不期望显示:" + expect_info['content']
                                 if include_str and not not_include_str:
-                                    splice_res = (
-                                        splice_res + "(" + include_str + ")" + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + include_str + ")" +"\n"
                                 elif not_include_str and not include_str:
-                                    splice_res = (
-                                        splice_res + "(" + not_include_str + ")" + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + not_include_str + ")" +"\n"
                                 elif include_str and not_include_str:
-                                    splice_res = (
-                                        splice_res
-                                        + "("
-                                        + include_str
-                                        + ","
-                                        + not_include_str
-                                        + ")"
-                                        + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + include_str + "," + not_include_str + ")" +"\n"
             log_len = len(log_info)
             for i in range(1, log_len + 1):
                 step_seq_name = f"step_{i}"
@@ -888,14 +817,8 @@ class LOGPROCESS:
                     for step_key, step_info in step_dict.items():
                         step_name = step_key
                         splice_res = splice_res + f"!!!func {step_name}\n"
-                        if step_seq_name in func_description:
-                            splice_res = (
-                                splice_res
-                                + "<"
-                                + func_description[step_seq_name]
-                                + ">"
-                                + "\n"
-                            )
+                        if step_seq_name in func_description: 
+                            splice_res = splice_res + "<" + func_description[step_seq_name] + ">" + "\n"
                         for dut_info in step_info:
                             for dut_key, dut_value in dut_info.items():
                                 if not dut_key:
@@ -903,72 +826,29 @@ class LOGPROCESS:
                                 splice_res = splice_res + f"!!device {dut_key}" + "\n"
                                 for dut_commond in dut_value:
                                     if "FAIL" == dut_commond["exec_res"]:
-                                        splice_res = (
-                                            splice_res
-                                            + "命令执行失败: "
-                                            + dut_commond["cmd"]
-                                            + "\n"
-                                        )
+                                        splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                                     else:
-                                        splice_res = (
-                                            splice_res + dut_commond["cmd"] + "\n"
-                                        )
-                                    if dut_commond["expect"]:
+                                        splice_res = splice_res + dut_commond["cmd"] + "\n"
+                                    if dut_commond['expect']:
                                         include_str = ""
                                         not_include_str = ""
-                                        for expect_info in dut_commond["expect"]:
-                                            if "包含" == expect_info["type"]:
+                                        for expect_info in dut_commond['expect']:
+                                            if '包含' == expect_info['type']:
                                                 if include_str:
-                                                    include_str = (
-                                                        include_str
-                                                        + ","
-                                                        + expect_info["content"]
-                                                    )
+                                                    include_str = include_str + ',' + expect_info['content']
                                                 else:
-                                                    include_str = (
-                                                        include_str
-                                                        + "期望显示:"
-                                                        + expect_info["content"]
-                                                    )
+                                                    include_str = include_str + "期望显示:" + expect_info['content']
                                             else:
                                                 if not_include_str:
-                                                    not_include_str = (
-                                                        include_str
-                                                        + ","
-                                                        + expect_info["content"]
-                                                    )
+                                                    not_include_str = include_str + ',' + expect_info['content']
                                                 else:
-                                                    not_include_str = (
-                                                        include_str
-                                                        + "不期望显示:"
-                                                        + expect_info["content"]
-                                                    )
+                                                    not_include_str = include_str + "不期望显示:" + expect_info['content']
                                         if include_str and not not_include_str:
-                                            splice_res = (
-                                                splice_res
-                                                + "("
-                                                + include_str
-                                                + ")"
-                                                + "\n"
-                                            )
+                                            splice_res = splice_res + "(" + include_str + ")" +"\n"
                                         elif not_include_str and not include_str:
-                                            splice_res = (
-                                                splice_res
-                                                + "("
-                                                + not_include_str
-                                                + ")"
-                                                + "\n"
-                                            )
+                                            splice_res = splice_res + "(" + not_include_str + ")" +"\n"
                                         elif include_str and not_include_str:
-                                            splice_res = (
-                                                splice_res
-                                                + "("
-                                                + include_str
-                                                + ","
-                                                + not_include_str
-                                                + ")"
-                                                + "\n"
-                                            )
+                                            splice_res = splice_res + "(" + include_str + "," + not_include_str + ")" +"\n"
         return splice_res
 
     def splice_contest_command(self, set_command_info, teardown_command_info):
@@ -984,62 +864,29 @@ class LOGPROCESS:
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
                             if "FAIL" == dut_commond["exec_res"]:
-                                splice_res = (
-                                    splice_res
-                                    + "命令执行失败: "
-                                    + dut_commond["cmd"]
-                                    + "\n"
-                                )
+                                splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                             else:
                                 splice_res = splice_res + dut_commond["cmd"] + "\n"
-                            if dut_commond["expect"]:
+                            if dut_commond['expect']:
                                 include_str = ""
                                 not_include_str = ""
-                                for expect_info in dut_commond["expect"]:
-                                    if "包含" == expect_info["type"]:
+                                for expect_info in dut_commond['expect']:
+                                    if '包含' == expect_info['type']:
                                         if include_str:
-                                            include_str = (
-                                                include_str
-                                                + ","
-                                                + expect_info["content"]
-                                            )
+                                            include_str = include_str + ',' + expect_info['content']
                                         else:
-                                            include_str = (
-                                                include_str
-                                                + "期望显示:"
-                                                + expect_info["content"]
-                                            )
+                                            include_str = include_str + "期望显示:" + expect_info['content']
                                     else:
                                         if not_include_str:
-                                            not_include_str = (
-                                                include_str
-                                                + ","
-                                                + expect_info["content"]
-                                            )
+                                            not_include_str = include_str + ',' + expect_info['content']
                                         else:
-                                            not_include_str = (
-                                                include_str
-                                                + "不期望显示:"
-                                                + expect_info["content"]
-                                            )
+                                            not_include_str = include_str + "不期望显示:" + expect_info['content']
                                 if include_str and not not_include_str:
-                                    splice_res = (
-                                        splice_res + "(" + include_str + ")" + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + include_str + ")" +"\n"
                                 elif not_include_str and not include_str:
-                                    splice_res = (
-                                        splice_res + "(" + not_include_str + ")" + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + not_include_str + ")" +"\n"
                                 elif include_str and not_include_str:
-                                    splice_res = (
-                                        splice_res
-                                        + "("
-                                        + include_str
-                                        + ","
-                                        + not_include_str
-                                        + ")"
-                                        + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + include_str + "," + not_include_str + ")" +"\n"
             if "teardown" in teardown_command_info:
                 splice_res = splice_res + "!!!func teardown\n"
                 teardown_info = teardown_command_info["teardown"]
@@ -1050,62 +897,29 @@ class LOGPROCESS:
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
                             if "FAIL" == dut_commond["exec_res"]:
-                                splice_res = (
-                                    splice_res
-                                    + "命令执行失败: "
-                                    + dut_commond["cmd"]
-                                    + "\n"
-                                )
+                                splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                             else:
                                 splice_res = splice_res + dut_commond["cmd"] + "\n"
-                            if dut_commond["expect"]:
+                            if dut_commond['expect']:
                                 include_str = ""
                                 not_include_str = ""
-                                for expect_info in dut_commond["expect"]:
-                                    if "包含" == expect_info["type"]:
+                                for expect_info in dut_commond['expect']:
+                                    if '包含' == expect_info['type']:
                                         if include_str:
-                                            include_str = (
-                                                include_str
-                                                + ","
-                                                + expect_info["content"]
-                                            )
+                                            include_str = include_str + ',' + expect_info['content']
                                         else:
-                                            include_str = (
-                                                include_str
-                                                + "期望显示:"
-                                                + expect_info["content"]
-                                            )
+                                            include_str = include_str + "期望显示:" + expect_info['content']
                                     else:
                                         if not_include_str:
-                                            not_include_str = (
-                                                include_str
-                                                + ","
-                                                + expect_info["content"]
-                                            )
+                                            not_include_str = include_str + ',' + expect_info['content']
                                         else:
-                                            not_include_str = (
-                                                include_str
-                                                + "不期望显示:"
-                                                + expect_info["content"]
-                                            )
+                                            not_include_str = include_str + "不期望显示:" + expect_info['content']
                                 if include_str and not not_include_str:
-                                    splice_res = (
-                                        splice_res + "(" + include_str + ")" + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + include_str + ")" +"\n"
                                 elif not_include_str and not include_str:
-                                    splice_res = (
-                                        splice_res + "(" + not_include_str + ")" + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + not_include_str + ")" +"\n"
                                 elif include_str and not_include_str:
-                                    splice_res = (
-                                        splice_res
-                                        + "("
-                                        + include_str
-                                        + ","
-                                        + not_include_str
-                                        + ")"
-                                        + "\n"
-                                    )
+                                    splice_res = splice_res + "(" + include_str + "," + not_include_str + ")" +"\n"
         return splice_res
 
     def output_command_file(self, file_path):
@@ -1119,24 +933,19 @@ class LOGPROCESS:
         data, data_list = self.extract_log_content(file_path)
         res = self.command_arrange(data_list)
         # 写入JSON文件
-        with open("data.json", "w", encoding="utf-8") as f:
+        with open('data.json', 'w', encoding='utf-8') as f:
             json.dump(res, f, ensure_ascii=False, indent=4)
 
     def single_conftest_func_process(self, file_path, flag):
         data = self.read_json_file(file_path)
         log_command_info = {}
         log_commands = []
-        # setup_commands = []
-        # teardown_commands = []
+        #setup_commands = []
+        #teardown_commands = []
         if "setup" == flag:
             if isinstance(data, dict):
                 for key, value in data.items():
-                    if (
-                        "create_interface" in key
-                        or "atf_retry" in key
-                        or "send" in key
-                        or "CheckCommand" in key
-                    ):
+                    if "create_interface" in key or "atf_retry" in key or "send" in key or "CheckCommand" in key:
                         print("111")
                         step_info = self.conftest_command_info_get(value, flag)
                         log_commands.extend(step_info)
@@ -1150,7 +959,7 @@ class LOGPROCESS:
                         step_info = self.conftest_command_info_get(value, flag)
                         log_commands.extend(step_info)
 
-        log_command_info = self.conftest_command_arrange(log_commands, flag)
+        log_command_info = self.conftest_command_arrange(log_commands,flag)
         return log_command_info
 
     def conftest_log_process(self, setup_file_path, teardown_file_path):
@@ -1158,15 +967,13 @@ class LOGPROCESS:
         set_command_info = {}
         teardown_command_info = {}
         if setup_file_path:
-            # print(setup_file_path)
+            #print(setup_file_path)
             setup_info = self.single_conftest_func_process(setup_file_path, "setup")
-            # print(setup_info)
+            #print(setup_info)
             set_command_info.update(setup_info)
-
+        
         if teardown_file_path:
-            teardown_info = self.single_conftest_func_process(
-                teardown_file_path, "teardown"
-            )
+            teardown_info = self.single_conftest_func_process(teardown_file_path,"teardown")
             teardown_command_info.update(teardown_info)
         log_info = self.splice_contest_command(set_command_info, teardown_command_info)
         return log_info
@@ -1175,9 +982,9 @@ class LOGPROCESS:
         res = {}
         conftest_setup_path = ""
         conftest_teardown_path = ""
-        for root, dirs, files in os.walk("."):
+        for root, dirs, files in os.walk('.'):
             for file in files:
-                if file.endswith(".pytestlog.json"):
+                if file.endswith('.pytestlog.json'):
                     log_file_path = os.path.join(root, file)
                     script_name = self.get_script_name(log_file_path)
                     if "setup" == script_name:
@@ -1188,9 +995,7 @@ class LOGPROCESS:
                         splice_res = self.output_command_file(log_file_path)
                         res[script_name] = splice_res
 
-        splice_res = self.conftest_log_process(
-            conftest_setup_path, conftest_teardown_path
-        )
+        splice_res = self.conftest_log_process(conftest_setup_path, conftest_teardown_path)
 
         if splice_res:
             res["conftest.py"] = splice_res
@@ -1200,17 +1005,15 @@ class LOGPROCESS:
 
 if __name__ == "__main__":
     # 1. 实例化类，传入日志文件路径
-    log_processor = LOGPROCESS(
-        "/home/y28677/w31815/tmps/new_script_extract/local/"
-    )  # 替换为实际的JSON文件路径
-
+    log_processor = LOGPROCESS("/home/y28677/w31815/tmps/new_script_extract/local/")  # 替换为实际的JSON文件路径
+    
     try:
         # 2. 调用 extract_setup_content 方法提取 setup 内容
-        # setup_data = log_processor.extract_and_write_info()
-        # name = log_processor.get_script_name()
+        #setup_data = log_processor.extract_and_write_info()
+        #name = log_processor.get_script_name()
         outres = log_processor.log_file_process()
-        for key, value in outres.items():
-            with open(key, "w", encoding="utf-8") as f:
+        for key,value in outres.items():
+            with open(key, 'w', encoding='utf-8') as f:
                 f.write(value)
 
     except FileNotFoundError as e:

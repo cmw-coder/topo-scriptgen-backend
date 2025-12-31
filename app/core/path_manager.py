@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Union, Optional
 from app.core.config import settings
 
-
 class PathManager:
     """路径管理器，负责处理项目工作目录的动态路径获取和管理"""
 
@@ -53,15 +52,6 @@ class PathManager:
         if isinstance(work_dir, str):
             work_dir = Path(work_dir)
         return work_dir / relative_path
-
-    @staticmethod
-    def get_scripts_dir() -> Path:
-        """获取脚本目录"""
-        scripts_dir = settings.get_scripts_directory()
-        if isinstance(scripts_dir, str):
-            scripts_dir = Path(scripts_dir)
-        scripts_dir.mkdir(parents=True, exist_ok=True)
-        return scripts_dir
 
     @staticmethod
     def get_logs_dir() -> Path:
@@ -125,7 +115,6 @@ class PathManager:
             path.mkdir(parents=True, exist_ok=True)
 
         return path
-
 
 # 创建全局路径管理器实例
 path_manager = PathManager()
