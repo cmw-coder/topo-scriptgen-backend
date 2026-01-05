@@ -16,6 +16,8 @@ from app.api import files, claude
 from app.api import topo_simple as topo
 from app.api import topo_gns3
 from app.api.itc.itc_router import router as itc_router
+from app.middleware.api_call_tracker import APICallTrackerMiddleware
+from app.services.auto_undeploy_service import auto_undeploy_service
 
 # 注意: Python 3.13 + Windows 事件循环策略已在 main.py 中设置
 # 这里不需要重复设置
@@ -104,6 +106,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"初始部署状态: {initial_status}")
     logger.info("=" * 50)
 
+    # 启动自动卸载服务
+    logger.info("启动自动卸载服务...")
+    auto_undeploy_service.start()
+    logger.info("自动卸载服务已启动")
+    logger.info("=" * 50)
+
     yield
 
     # 关闭时执行
@@ -135,19 +143,25 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 添加 API 调用追踪中间件
+    app.add_middleware(APICallTrackerMiddleware)
+
     # 添加请求日志中间件
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         start_time = request.state.start_time if hasattr(request.state, 'start_time') else None
         response = await call_next(request)
 
-        # 记录请求日志
-        logger = logging.getLogger("requests")
-        logger.info(
-            f"{request.method} {request.url.path} - "
-            f"状态码: {response.status_code} - "
-            f"客户端: {request.client.host if request.client else 'unknown'}"
-        )
+        # 排除健康检查端点的日志
+        excluded_paths = ["/healthz", "/health", "/ping", "/docs", "/redoc", "/openapi.json"]
+        if request.url.path not in excluded_paths:
+            # 记录请求日志
+            logger = logging.getLogger("requests")
+            logger.info(
+                f"{request.method} {request.url.path} - "
+                f"状态码: {response.status_code} - "
+                f"客户端: {request.client.host if request.client else 'unknown'}"
+            )
 
         return response
 

@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+from datetime import datetime
 
 class Settings:
     """应用配置类
@@ -87,6 +88,19 @@ class Settings:
     _DEPLOY_DEVICE_LIST: Optional[List[Dict[str, Any]]] = None
     _DEPLOY_STATUS: str = "not_deployed"  # not_deployed, deploying, deployed, failed
     _DEPLOY_ERROR_MESSAGE: Optional[str] = None  # 部署失败的错误信息
+
+    # 全局静态变量 - 最后 API 调用时间
+    _LAST_API_CALL_TIME: Optional[datetime] = None
+
+    @classmethod
+    def get_last_api_call_time(cls) -> Optional[datetime]:
+        """获取最后一次 API 调用时间"""
+        return cls._LAST_API_CALL_TIME
+
+    @classmethod
+    def update_last_api_call_time(cls) -> None:
+        """更新最后一次 API 调用时间为当前时间"""
+        cls._LAST_API_CALL_TIME = datetime.now()
 
     @classmethod
     def get_local_ip(cls) -> str:
