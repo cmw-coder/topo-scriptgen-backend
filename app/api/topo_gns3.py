@@ -230,7 +230,7 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
     topox_request = TopoxRequest.model_validate({"network": network})
     topox_xml = topo_service.build_topox_xml(topox_request)
 
-    topox_path = Path.home() / "project" / "test_scripts" / "default.topox"
+    topox_path = Path.home() / "project" / "default.topox"
     try:
         topox_path.parent.mkdir(parents=True, exist_ok=True)
         topox_path.write_text(topox_xml, encoding="utf-8")
