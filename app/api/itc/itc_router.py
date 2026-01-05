@@ -35,32 +35,59 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
         import getpass
         from app.services.itc.itc_service import itc_service
 
+        # 获取用户名
+        username = getpass.getuser()
+
         # 查找 topox 文件并获取路径信息
         from app.core.config import settings
         import os
 
         work_dir = settings.get_work_directory()
-        test_scripts_dir = os.path.join(work_dir, "test_scripts")
 
-        # 查找 topox 文件
+        # 只检查工作目录根目录下的 topox 文件
         import glob
-        pattern = os.path.join(test_scripts_dir, "*.topox")
+        pattern = os.path.join(work_dir, "*.topox")
         topox_files = glob.glob(pattern)
-        if not topox_files:
-            pattern = os.path.join(work_dir, "**/*.topox")
-            topox_files = glob.glob(pattern, recursive=True)
 
-        if not topox_files:
-            raise HTTPException(
-                status_code=404,
-                detail="未找到任何 .topox 文件"
-            )
+        if topox_files:
+            # 如果存在 topox 文件，调用 topo_service 的 _copy_to_aigc_target 函数拷贝
+            from app.services.topo_service import topo_service
+            from pathlib import Path
 
-        default_topox_file = topox_files[0]
+            default_topox_file = topox_files[0]
+            topox_path = Path(default_topox_file)
+            filename = topox_path.name
 
-        # 构建 UNC 路径
-        username = getpass.getuser()
-        unc_topofile = f"//10.144.41.149/webide/aigc_tool/{username}"
+            # 拷贝 topox 到指定目录
+            try:
+                topo_service._copy_to_aigc_target(topox_path, filename)
+            except Exception as copy_error:
+                # 拷贝失败记录日志但不阻断部署流程
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"拷贝 topox 文件到 AIGC 目标目录失败: {str(copy_error)}")
+
+            # 使用 UNC 路径用于部署
+            unc_topofile = f"//10.144.41.149/webide/aigc_tool/{username}"
+        else:
+            # 不存在 topox 文件，使用旧的逻辑查找
+            test_scripts_dir = os.path.join(work_dir, "test_scripts")
+            pattern = os.path.join(test_scripts_dir, "*.topox")
+            topox_files = glob.glob(pattern)
+            if not topox_files:
+                pattern = os.path.join(work_dir, "**/*.topox")
+                topox_files = glob.glob(pattern, recursive=True)
+
+            if not topox_files:
+                raise HTTPException(
+                    status_code=404,
+                    detail="未找到任何 .topox 文件"
+                )
+
+            default_topox_file = topox_files[0]
+
+            # 使用旧的 UNC 路径格式（不包含文件名）
+            unc_topofile = f"//10.144.41.149/webide/aigc_tool/{username}"
 
 
         # 启动后台部署任务
