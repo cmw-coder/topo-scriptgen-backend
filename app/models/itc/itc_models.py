@@ -3,9 +3,7 @@ from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 
 class DeployRequest(BaseModel):
-    """部署环境请求模型
-AI_FingerPrint_UUID: 20251224-xwxk4B47
-"""
+    """部署环境请求模型"""
     topofile: Optional[str] = Field(None, description="topox文件目录，一般是svn目录")
     verisonPath: Optional[str] = Field(None, description="版本目录，可选，运行脚本需要的版本目录")
     deviceType: Optional[str] = Field("simware9cen", description="设备类型，支持simware9cen、simware9dis、simware7dis，默认simware9cen")
@@ -14,17 +12,17 @@ class NewDeployRequest(BaseModel):
     """新部署环境请求模型（简化版）
 
     支持的参数：
-    - verisonPath: 版本目录（兼容旧接口拼写，与 versionpath 二选一）
+    - versionPath: 版本目录（兼容旧接口拼写，与 versionpath 二选一）
     - versionpath: 版本目录（正确拼写，与 verisonPath 二选一）
     - devicetype: 设备类型
     """
-    verisonPath: Optional[str] = Field(None, description="版本目录（兼容旧接口拼写），可选，运行脚本需要的版本目录")
+    versionPath: Optional[str] = Field(None, description="版本目录（兼容旧接口拼写），可选，运行脚本需要的版本目录")
     versionpath: Optional[str] = Field(None, description="版本目录（正确拼写），可选，运行脚本需要的版本目录")
     devicetype: Optional[str] = Field("simware9cen", description="设备类型，支持simware9cen、simware9dis、simware7dis，默认simware9cen")
 
     def get_version_path(self) -> Optional[str]:
-        """获取版本路径（优先使用正确拼写的 versionpath，否则使用 verisonPath）"""
-        return self.versionpath or self.verisonPath
+        """获取版本路径（优先使用正确拼写的 versionpath，否则使用 versionPath）"""
+        return self.versionpath or self.versionPath
 
 class RunScriptRequest(BaseModel):
     """运行脚本请求模型"""
