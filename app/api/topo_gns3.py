@@ -186,7 +186,20 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
             node_id_to_name[node_id] = name
 
         ports_mapping = node.get("ports") if isinstance(node, dict) else None
-        if ports_mapping is None:
+        if ports_mapping is not None:
+            if isinstance(ports_mapping, list):
+                port_map: Dict[str, str] = {}
+                for port in ports_mapping:
+                    if not isinstance(port, dict):
+                        continue
+                    port_num = port.get("adapter_number")
+                    if port_num is None:
+                        continue
+                    iface = port.get("interface") or port.get("name") or ""
+                    port_map[str(port_num)] = str(iface)
+                if port_map and node_id:
+                    node_id_to_portmap[node_id] = port_map
+        else:
             properties = node.get("properties") if isinstance(node, dict) else None
             ports_mapping = (
                 properties.get("ports_mapping")
@@ -194,18 +207,18 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
                 else None
             )
 
-        if isinstance(ports_mapping, list):
-            port_map: Dict[str, str] = {}
-            for port in ports_mapping:
-                if not isinstance(port, dict):
-                    continue
-                port_num = port.get("port_number")
-                if port_num is None:
-                    continue
-                iface = port.get("interface") or port.get("name") or ""
-                port_map[str(port_num)] = str(iface)
-            if port_map and node_id:
-                node_id_to_portmap[node_id] = port_map
+            if isinstance(ports_mapping, list):
+                port_map: Dict[str, str] = {}
+                for port in ports_mapping:
+                    if not isinstance(port, dict):
+                        continue
+                    port_num = port.get("port_number")
+                    if port_num is None:
+                        continue
+                    iface = port.get("interface") or port.get("name") or ""
+                    port_map[str(port_num)] = str(iface)
+                if port_map and node_id:
+                    node_id_to_portmap[node_id] = port_map
 
     link_list: List[Dict[str, str]] = []
     for link in links_data or []:
