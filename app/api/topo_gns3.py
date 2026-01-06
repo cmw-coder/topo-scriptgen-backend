@@ -176,6 +176,8 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
 
         properties = node.get("properties") if isinstance(node, dict) else None
         ports_mapping = properties.get("ports_mapping") if isinstance(properties, dict) else None
+        if ports_mapping is None:
+            ports_mapping = properties.get("ports") if isinstance(properties, dict) else None
         if isinstance(ports_mapping, list):
             port_map: Dict[str, str] = {}
             for port in ports_mapping:
