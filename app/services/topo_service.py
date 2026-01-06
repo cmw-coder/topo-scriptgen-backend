@@ -283,17 +283,24 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
             # 确保目标目录存在
             os.makedirs(target_dir, exist_ok=True)
 
+            # 提前删除目标目录中所有已存在的 .topox 文件
+            try:
+                if os.path.exists(target_dir):
+                    for existing_file in os.listdir(target_dir):
+                        if existing_file.endswith('.topox'):
+                            old_file_path = os.path.join(target_dir, existing_file)
+                            try:
+                                os.remove(old_file_path)
+                                logger.debug(f"已删除目标目录中的旧topox文件: {old_file_path}")
+                            except Exception as delete_error:
+                                # 删除失败不影响后续流程，仅记录异常
+                                logger.warning(f"删除旧topox文件失败: {old_file_path}, 异常: {str(delete_error)}")
+            except Exception as list_error:
+                # 列出目录或删除过程失败不影响后续流程，仅记录异常
+                logger.warning(f"清理目标目录topox文件时发生异常: {str(list_error)}")
+
             # 确定目标文件路径
             target_path = os.path.join(target_dir, filename)
-
-            # 如果目标文件已存在，尝试删除它（处理权限问题）
-            if os.path.exists(target_path):
-                try:
-                    os.remove(target_path)
-                    logger.debug(f"已删除旧的目标文件: {target_path}")
-                except PermissionError:
-                    # 如果无法删除，尝试使用不同的方式
-                    logger.warning(f"无法删除旧文件 {target_path}，将尝试其他方式")
 
             # 复制文件
             shutil.copy2(source_file_path, target_path)
