@@ -73,7 +73,10 @@ async def get_gns3_token() -> tuple[str, JSONResponse | None]:
     if not token:
         logger.error("GNS3 auth response missing access_token")
         return "", JSONResponse(
-            content={"status": "error", "message": "No access_token received from GNS3."},
+            content={
+                "status": "error",
+                "message": "No access_token received from GNS3.",
+            },
             status_code=502,
         )
 
@@ -89,7 +92,9 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
     try:
         payload_raw: Any = await request.json()
     except (json.JSONDecodeError, ValueError):
-        logger.warning("POST /api/v1/topox-from-gns3 received no JSON body or invalid JSON")
+        logger.warning(
+            "POST /api/v1/topox-from-gns3 received no JSON body or invalid JSON"
+        )
         payload_raw = {}
     except Exception:
         logger.exception("POST /api/v1/topox-from-gns3 failed to parse JSON body")
@@ -97,10 +102,13 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
 
     payload: Dict[str, Any] = payload_raw if isinstance(payload_raw, dict) else {}
     logger.info(
-        "POST /api/v1/topox-from-gns3 payload: %s", json.dumps(payload, ensure_ascii=False)
+        "POST /api/v1/topox-from-gns3 payload: %s",
+        json.dumps(payload, ensure_ascii=False),
     )
 
-    project_id = payload.get("project_id") if isinstance(payload.get("project_id"), str) else ""
+    project_id = (
+        payload.get("project_id") if isinstance(payload.get("project_id"), str) else ""
+    )
     project_id_error: str | None = None
     if not project_id:
         project_id, project_id_error = load_project_id_from_file()
@@ -109,7 +117,8 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
         return JSONResponse(
             content={
                 "status": "error",
-                "message": project_id_error or "project_id is required (body or .gns3_project_id).",
+                "message": project_id_error
+                or "project_id is required (body or .gns3_project_id).",
             },
             status_code=400,
         )
@@ -136,7 +145,9 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
 
     if nodes_resp.status_code != 200 or links_resp.status_code != 200:
         logger.error(
-            "GNS3 API error nodes:%s links:%s", nodes_resp.status_code, links_resp.status_code
+            "GNS3 API error nodes:%s links:%s",
+            nodes_resp.status_code,
+            links_resp.status_code,
         )
         return JSONResponse(
             content={"status": "error", "message": "GNS3 API returned an error."},
@@ -174,10 +185,15 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
         if node_id:
             node_id_to_name[node_id] = name
 
-        properties = node.get("properties") if isinstance(node, dict) else None
-        ports_mapping = properties.get("ports_mapping") if isinstance(properties, dict) else None
+        ports_mapping = node.get("ports") if isinstance(node, dict) else None
         if ports_mapping is None:
-            ports_mapping = properties.get("ports") if isinstance(properties, dict) else None
+            properties = node.get("properties") if isinstance(node, dict) else None
+            ports_mapping = (
+                properties.get("ports_mapping")
+                if isinstance(properties, dict)
+                else None
+            )
+
         if isinstance(ports_mapping, list):
             port_map: Dict[str, str] = {}
             for port in ports_mapping:
@@ -237,7 +253,9 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
         topox_path.parent.mkdir(parents=True, exist_ok=True)
         topox_path.write_text(topox_xml, encoding="utf-8")
         logger.info("Wrote topox to %s", topox_path)
-        return JSONResponse(content={"status": "ok", "data": topox_xml}, status_code=200)
+        return JSONResponse(
+            content={"status": "ok", "data": topox_xml}, status_code=200
+        )
     except OSError:
         logger.exception("Failed to write topox to %s", topox_path)
         return JSONResponse(
@@ -265,4 +283,3 @@ async def to_web_ui() -> Response:
         f"{project_id}?token={token}"
     )
     return RedirectResponse(url=target_url, status_code=302)
-
