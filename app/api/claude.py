@@ -775,12 +775,16 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
     import logging
     logger = logging.getLogger(__name__)
 
+    # 导入消息解析器
+    from app.utils.claude_message_parser import ClaudeMessageParser
+    parser = ClaudeMessageParser()
+
     # 写入任务开始标识
     write_task_start_log(task_id, "自动化测试流程")
     write_task_log(task_id, f"测试点: {test_point[:100]}...")
 
     def send_message_log(message_type: str, data: str, stage: str = ""):
-        """写入消息到日志文件"""
+        """写入消息到日志文件（保留用于非消息类型的日志）"""
         try:
             stage_prefix = f"[{stage}] " if stage else ""
             log_content = f"{stage_prefix}[{message_type}] {data[:300]}"
@@ -802,41 +806,33 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
         # ========== 阶段1: 生成 conftest.py ==========
         logger.info(f"Task {task_id}: 开始生成 conftest.py")
-        send_message_log("info", "===== 阶段1: 生成 conftest.py =====", "conftest生成")
+        write_task_log(task_id, "===== 阶段1: 生成 conftest.py =====")
 
         from app.services.cc_workflow import stream_generate_conftest_response
 
+        message_count = 0
         async for message in stream_generate_conftest_response(test_point=test_point, workspace=workspace):
-            message_type = type(message).__name__
+            message_count += 1
 
-            # 提取消息内容
-            message_content = ""
-            if hasattr(message, 'content'):
-                message_content = message.content
-            elif hasattr(message, 'text'):
-                message_content = message.text
-            elif hasattr(message, 'model_response'):
-                message_content = str(message.model_response)
-            else:
-                message_content = str(message)
+            # 使用消息解析器解析消息
+            parsed_info = parser.parse_message(message, stage="conftest生成")
+
+            # 只记录需要记录的信息
+            if parsed_info["should_log"]:
+                log_entry = parser.format_log_entry(parsed_info)
+                if log_entry:
+                    write_task_log(task_id, log_entry)
 
             # 判断是否是错误消息
             is_error = getattr(message, 'error', False) if hasattr(message, 'error') else False
-
-            # 判断是否是结果消息
-            is_result = "Result" in message_type or "result" in message_type.lower()
-
-            # 写入日志
-            send_message_log(message_type, message_content, "conftest生成")
-
             if is_error:
                 update_task_status("failed", "conftest生成")
-                send_message_log("error", "conftest.py生成失败，终止流程", "conftest生成")
+                write_task_log(task_id, "❌ conftest.py生成失败，终止流程")
                 write_task_end_log(task_id, "failed")
                 return
 
-        logger.info(f"Task {task_id}: conftest.py 生成完成")
-        send_message_log("info", "✓ conftest.py 生成完成", "conftest生成")
+        logger.info(f"Task {task_id}: conftest.py 生成完成，共处理 {message_count} 条消息")
+        write_task_log(task_id, f"✓ conftest.py 生成完成 (处理了 {message_count} 条消息)")
 
         # 拷贝 conftest.py 到指定目录
         try:
@@ -896,41 +892,36 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         # ========== 阶段2: 生成测试脚本 ==========
         logger.info(f"Task {task_id}: 开始生成测试脚本")
         update_task_status("running", "测试脚本生成")
-        send_message_log("info", "\n===== 阶段2: 生成测试脚本 =====", "测试脚本生成")
+        write_task_log(task_id, "\n===== 阶段2: 生成测试脚本 =====")
 
         from app.services.cc_workflow import stream_test_script_response
 
-        async for message in stream_test_script_response(test_point=test_point, workspace=workspace):
-            message_type = type(message).__name__
+        # 重置解析器计数器
+        parser.reset_counters()
+        message_count = 0
 
-            # 提取消息内容
-            message_content = ""
-            if hasattr(message, 'content'):
-                message_content = message.content
-            elif hasattr(message, 'text'):
-                message_content = message.text
-            elif hasattr(message, 'model_response'):
-                message_content = str(message.model_response)
-            else:
-                message_content = str(message)
+        async for message in stream_test_script_response(test_point=test_point, workspace=workspace):
+            message_count += 1
+
+            # 使用消息解析器解析消息
+            parsed_info = parser.parse_message(message, stage="测试脚本生成")
+
+            # 只记录需要记录的信息
+            if parsed_info["should_log"]:
+                log_entry = parser.format_log_entry(parsed_info)
+                if log_entry:
+                    write_task_log(task_id, log_entry)
 
             # 判断是否是错误消息
             is_error = getattr(message, 'error', False) if hasattr(message, 'error') else False
-
-            # 判断是否是结果消息
-            is_result = "Result" in message_type or "result" in message_type.lower()
-
-            # 写入日志
-            send_message_log(message_type, message_content, "测试脚本生成")
-
             if is_error:
                 update_task_status("failed", "测试脚本生成")
-                send_message_log("error", "测试脚本生成失败，终止流程", "测试脚本生成")
+                write_task_log(task_id, "❌ 测试脚本生成失败，终止流程")
                 write_task_end_log(task_id, "failed")
                 return
 
-        logger.info(f"Task {task_id}: 测试脚本生成完成")
-        send_message_log("info", "✓ 测试脚本生成完成", "测试脚本生成")
+        logger.info(f"Task {task_id}: 测试脚本生成完成，共处理 {message_count} 条消息")
+        write_task_log(task_id, f"✓ 测试脚本生成完成 (处理了 {message_count} 条消息)")
 
         # 拷贝生成的测试脚本（简化版，与前面类似）
         # ... (省略具体实现，与原代码类似)
@@ -938,27 +929,27 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         # ========== 阶段3: 调用 ITC run 接口执行脚本 ==========
         logger.info(f"Task {task_id}: 开始调用 ITC run 接口")
         update_task_status("running", "ITC脚本执行")
-        send_message_log("info", "\n===== 阶段3: 执行测试脚本 =====", "ITC脚本执行")
+        write_task_log(task_id, "\n===== 阶段3: 执行测试脚本 =====")
 
         # 获取 executorip
         from app.core.config import settings
         executorip = settings.get_deploy_executor_ip()
 
         if not executorip:
-            send_message_log("error", "未找到部署的执行机IP，请先调用 /deploy 接口部署环境", "ITC脚本执行")
+            write_task_log(task_id, "❌ 未找到部署的执行机IP，请先调用 /deploy 接口部署环境")
             update_task_status("failed", "ITC脚本执行")
             write_task_end_log(task_id, "failed")
             return
 
-        send_message_log("info", f"使用执行机: {executorip}", "ITC脚本执行")
+        write_task_log(task_id, f"ℹ️ 执行机IP: {executorip}")
 
         # 构造脚本路径
         import getpass
         username = getpass.getuser()
         scriptspath = f"//10.144.41.149/webide/aigc_tool/{username}"
 
-        send_message_log("info", f"脚本路径: {scriptspath}", "ITC脚本执行")
-        send_message_log("info", "正在调用 ITC run 接口...", "ITC脚本执行")
+        write_task_log(task_id, f"ℹ️ 脚本路径: {scriptspath}")
+        write_task_log(task_id, "⏳ 正在调用 ITC run 接口...")
 
         # 调用 ITC run 接口
         from app.services.itc.itc_service import itc_service
@@ -984,14 +975,14 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         # 发送结果消息
         try:
             result_message = return_code_to_message(result)
-            send_message_log("info", f"\nITC run 接口返回结果:\n{result_message}", "ITC脚本执行")
+            write_task_log(task_id, f"\n📊 ITC 执行结果:\n{result_message}")
         except Exception as e:
             logger.error(f"Task {task_id}: 发送 ITC 结果消息失败: {str(e)}")
-            send_message_log("warning", "ITC run 执行完成，但结果解析失败", "ITC脚本执行")
+            write_task_log(task_id, "⚠️ ITC run 执行完成，但结果解析失败")
 
         # 更新任务状态为完成
         update_task_status("completed", "ITC脚本执行")
-        send_message_log("info", "\n===== 自动化测试流程完成 =====", "完成")
+        write_task_log(task_id, "\n===== 自动化测试流程完成 =====")
 
         # 写入任务结束标识
         write_task_end_log(task_id, "completed")
@@ -1002,7 +993,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         logger.error(f"Task {task_id}: {error_msg}")
 
         update_task_status("failed")
-        send_message_log("error", error_msg, "错误")
+        write_task_log(task_id, f"❌ {error_msg}")
 
         # 写入任务结束标识
         write_task_end_log(task_id, "failed")
