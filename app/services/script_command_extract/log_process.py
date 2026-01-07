@@ -656,10 +656,10 @@ class LOGPROCESS:
     def match_command_and_exe_info(self, data):
         res = []
         command_seq = 0
-        commands = data['send_commands']
-        exec_info = data['exec_info']
-        exec_res = data['exec_res']
-        check_expect = data['expect']
+        commands = data.get('send_commands', [])
+        exec_info = data.get('exec_info', '')
+        exec_res = data.get('exec_res', '')
+        check_expect = data.get('expect', [])
         if not commands:
             info_dict = {}
             info_dict['cmd'] = commands
