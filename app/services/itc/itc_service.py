@@ -444,12 +444,17 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             # 拷贝文件到目标目录（保留源文件，额外拷贝一份）
             shutil.copy2(topox_file_path, target_file_path)
 
-            # 设置文件和目录权限为 777（其他用户可读可写）
+            # 设置 topox 文件权限（权限不足时记录警告）
             try:
                 os.chmod(target_file_path, 0o777)
-                os.chmod(target_dir, 0o777)
             except PermissionError:
-                logger.warning(f"权限不足，无法设置文件权限 {target_file_path}，但文件已成功拷贝")
+                logger.warning(f"⚠️ 权限不足，无法设置 topox 文件权限: {target_file_path}，但文件已成功拷贝")
+
+            # 不再修改目录权限
+            # try:
+            #     os.chmod(target_dir, 0o777)
+            # except PermissionError:
+            #     pass
 
             logger.info(f"已拷贝 {filename} 到 {target_dir}")
             logger.info(f"目标文件: {target_file_path}")

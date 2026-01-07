@@ -31,19 +31,17 @@ class UserContext:
 
     @classmethod
     def set_permissions_recursive(cls, path, mode, silent=False):
-        """递归设置目录及其所有内容的权限
+        """递归设置目录及其所有内容的权限（静默模式，不记录日志）
 
         Args:
             path: 目录或文件路径
             mode: 权限模式（如 0o777）
-            silent: 是否静默模式（True=不记录警告日志）
+            silent: 是否静默模式（默认True，不记录警告日志）
 
         Returns:
             bool: 是否成功设置权限
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
+        # 完全静默，不记录任何日志
         try:
             if os.path.isfile(path):
                 # 如果是文件，直接设置权限
@@ -55,26 +53,28 @@ class UserContext:
                         dir_path = os.path.join(root, dir_name)
                         try:
                             os.chmod(dir_path, mode)
-                        except PermissionError:
-                            if not silent:
-                                logger.warning(f"权限不足: 无法设置目录权限 {dir_path}")
+                        except (PermissionError, OSError):
+                            # 静默忽略权限错误
+                            pass
                     for file_name in files:
                         file_path = os.path.join(root, file_name)
                         try:
                             os.chmod(file_path, mode)
-                        except PermissionError:
-                            if not silent:
-                                logger.warning(f"权限不足: 无法设置文件权限 {file_path}")
+                        except (PermissionError, OSError):
+                            # 静默忽略权限错误
+                            pass
                 # 最后设置顶层目录的权限
-                os.chmod(path, mode)
+                try:
+                    os.chmod(path, mode)
+                except (PermissionError, OSError):
+                    # 静默忽略权限错误
+                    pass
             return True
-        except PermissionError as e:
-            if not silent:
-                logger.error(f"权限不足: 无法设置权限 {path} - {str(e)}")
+        except (PermissionError, OSError):
+            # 静默忽略所有权限错误
             return False
-        except Exception as e:
-            if not silent:
-                logger.error(f"设置权限失败 {path}: {str(e)}")
+        except Exception:
+            # 其他异常也静默处理
             return False
 
     @classmethod

@@ -376,12 +376,17 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
         try:
             shutil.copy2(script_full_path, target_script_path)
 
-            # 设置文件权限
+            # 设置 python 脚本文件权限（权限不足时记录警告）
             try:
                 os.chmod(target_script_path, 0o777)
-                os.chmod(target_dir, 0o777)
             except PermissionError:
-                logger.warning(f"Task {task_id}: 权限不足，无法设置文件权限，但文件已成功拷贝")
+                logger.warning(f"Task {task_id}: ⚠️ 权限不足，无法设置脚本文件权限: {target_script_path}")
+
+            # 不再修改目录权限
+            # try:
+            #     os.chmod(target_dir, 0o777)
+            # except PermissionError:
+            #     pass
 
             send_message("info", f"✓ 修改后的脚本已拷贝到: {target_script_path}", "processing")
             logger.info(f"Task {task_id}: 脚本已拷贝到 {target_script_path}")
@@ -423,11 +428,11 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
                 target_topox_path = os.path.join(target_dir, "default.topox")
                 shutil.copy2(default_topox_source, target_topox_path)
 
-                # 设置文件权限
+                # 设置 topox 文件权限（权限不足时记录警告）
                 try:
                     os.chmod(target_topox_path, 0o777)
                 except PermissionError:
-                    logger.warning(f"Task {task_id}: 权限不足，无法设置 default.topox 文件权限")
+                    logger.warning(f"Task {task_id}: ⚠️ 权限不足，无法设置 topox 文件权限: {target_topox_path}")
 
                 send_message("info", f"✓ default.topox 已拷贝到: {target_topox_path}", "processing")
                 logger.info(f"Task {task_id}: default.topox 已拷贝到 {target_topox_path}")
@@ -873,11 +878,17 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                 target_conftest = os.path.join(target_dir, "conftest.py")
                 shutil.copy2(source_conftest, target_conftest)
 
+                # 设置 conftest.py 文件权限（权限不足时记录警告）
                 try:
                     os.chmod(target_conftest, 0o777)
-                    os.chmod(target_dir, 0o777)
                 except PermissionError:
-                    logger.warning(f"Task {task_id}: 权限不足，无法设置文件权限")
+                    logger.warning(f"Task {task_id}: ⚠️ 权限不足，无法设置 conftest.py 文件权限: {target_conftest}")
+
+                # 不再修改目录权限
+                # try:
+                #     os.chmod(target_dir, 0o777)
+                # except PermissionError:
+                #     pass
 
                 logger.info(f"Task {task_id}: conftest.py 已拷贝到 {target_conftest}")
                 send_message_log("info", f"✓ conftest.py 已备份到: {target_conftest}", "conftest生成")
