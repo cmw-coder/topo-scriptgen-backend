@@ -423,7 +423,7 @@ class LOGPROCESS:
             if isinstance(item, dict):
                 if "Title" in item:
                     action = item["Title"]
-                    if "METHOD" in action:
+                    if "METHOD" in action and "Parameter" in item:
                         send_info = self.send_info_get(item)
                         send_info["func"] = "teardown"
                         result.append(send_info)
@@ -437,7 +437,7 @@ class LOGPROCESS:
                 if isinstance(item, dict):
                     if "Title" in item:
                         action = item["Title"]
-                        if "METHOD" in action:
+                        if "METHOD" in action and "Parameter" in item:
                             send_info = self.send_info_get(item)
                             send_info["func"] = "teardown"
                             result.append(send_info)
@@ -469,7 +469,7 @@ class LOGPROCESS:
                         item = single_stepLists
                         if "Title" in item:
                             action = item["Title"]
-                            if "METHOD" in action:
+                            if "METHOD" in action and "Parameter" in item:
                                 send_info = self.send_info_get(item)
                                 send_info["func"] = step_func
                                 send_info["step_seq"] = step_num
@@ -484,7 +484,7 @@ class LOGPROCESS:
                         for item in single_stepLists:
                             if "Title" in item:
                                 action = item["Title"]
-                                if "METHOD" in action:
+                                if "METHOD" in action and "Parameter" in item:
                                     send_info = self.send_info_get(item)
                                     send_info["func"] = step_func
                                     send_info["step_seq"] = step_num
@@ -515,7 +515,7 @@ class LOGPROCESS:
                             item = single_stepLists
                             if "Title" in item:
                                 action = item["Title"]
-                                if "METHOD" in action:
+                                if "METHOD" in action and "Parameter" in item:
                                     send_info = self.send_info_get(item)
                                     send_info["func"] = step_func
                                     send_info["step_seq"] = step_num
@@ -530,7 +530,7 @@ class LOGPROCESS:
                             for item in single_stepLists:
                                 if "Title" in item:
                                     action = item["Title"]
-                                    if "METHOD" in action:
+                                    if "METHOD" in action and "Parameter" in item:
                                         send_info = self.send_info_get(item)
                                         send_info["func"] = step_func
                                         send_info["step_seq"] = step_num
