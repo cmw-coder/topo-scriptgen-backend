@@ -35,6 +35,10 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
     try:
         import getpass
         from app.services.itc.itc_service import itc_service
+        import logging
+
+        # 初始化 logger
+        logger = logging.getLogger(__name__)
 
         # 获取用户名
         username = getpass.getuser()
@@ -64,8 +68,6 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
                 topo_service._copy_to_aigc_target(topox_path, filename)
             except Exception as copy_error:
                 # 拷贝失败记录日志但不阻断部署流程
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.warning(f"拷贝 topox 文件到 AIGC 目标目录失败: {str(copy_error)}")
 
             # 使用 UNC 路径用于部署
