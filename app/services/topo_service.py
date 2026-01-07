@@ -3,7 +3,8 @@ from pathlib import Path
 import logging
 import shutil
 import os
-from typing import Optional
+import json
+from typing import Optional, Dict, Any, List
 
 from app.core.path_manager import path_manager
 from app.models.topo import Network, Device, Link, TopoxRequest, TopoxResponse
@@ -313,6 +314,64 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
         except Exception as e:
             logger.error(f"复制文件到 AIGC 目标目录失败: {str(e)}")
             raise
+
+    def save_device_list_to_aigc_json(self, network: Network) -> None:
+        """
+        将设备列表保存到 .aigc_tool/aigc.json 文件中
+
+        Args:
+            network: 包含设备列表的网络拓扑对象
+        """
+        try:
+            # 获取工作目录
+            work_dir = Path(self.path_manager.get_project_root())
+            aigc_tool_dir = work_dir / ".aigc_tool"
+            aigc_json_path = aigc_tool_dir / "aigc.json"
+
+            # 确保目录存在
+            aigc_tool_dir.mkdir(parents=True, exist_ok=True)
+
+            # 转换设备列表为字典格式
+            device_list_data = []
+            for device in network.device_list:
+                device_dict = {
+                    "name": device.name,
+                    "location": device.location
+                }
+
+                # 添加可选字段
+                if device.text:
+                    device_dict["text"] = device.text
+
+                if device.portlist:
+                    device_dict["portlist"] = [
+                        {"name": port.name, "type": port.type}
+                        for port in device.portlist
+                    ]
+
+                device_list_data.append(device_dict)
+
+            # 读取现有的 aigc.json（如果存在）
+            existing_data = {}
+            if aigc_json_path.exists():
+                try:
+                    with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                        existing_data = json.load(f)
+                except Exception as e:
+                    logger.warning(f"读取现有 aigc.json 失败: {str(e)}，将创建新文件")
+
+            # 更新设备列表
+            existing_data["device_list"] = device_list_data
+
+            # 写入文件
+            with open(aigc_json_path, 'w', encoding='utf-8') as f:
+                json.dump(existing_data, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"成功保存设备列表到 aigc.json: {aigc_json_path}")
+
+        except Exception as e:
+            logger.error(f"保存设备列表到 aigc.json 失败: {str(e)}")
+            # 不抛出异常，避免影响主流程
 
 # 创建topo服务实例
 topo_service = TopoService()

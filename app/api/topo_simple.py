@@ -187,6 +187,35 @@ async def get_topox() -> JSONResponse:
         logger.info("%s not found; returning empty data", topox_path)
         network = {"device_list": [], "link_list": []}
 
+    # 尝试从 aigc.json 读取 text 和 portlist 信息
+    try:
+        import json
+        work_dir = path_manager.get_project_root()
+        aigc_json_path = work_dir / ".aigc_tool" / "aigc.json"
+
+        if aigc_json_path.exists():
+            with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                aigc_config = json.load(f)
+                aigc_device_list = aigc_config.get("device_list", [])
+
+                # 创建设备属性映射
+                device_attrs_map = {}
+                for device_info in aigc_device_list:
+                    device_name = device_info.get("name")
+                    if device_name:
+                        device_attrs_map[device_name] = {
+                            "text": device_info.get("text"),
+                            "portlist": device_info.get("portlist")
+                        }
+
+                # 为设备列表添加 text 和 portlist 属性
+                for device in network["device_list"]:
+                    device_name = device["name"]
+                    if device_name in device_attrs_map:
+                        device.update(device_attrs_map[device_name])
+    except Exception as e:
+        logger.warning(f"读取 aigc.json 失败: {str(e)}")
+
     # 定义mock设备属性信息
     mock_device_attrs = {
         "DUT1": {"host": "55.97.64.23", "port": 23, "type": "telnet"},
@@ -231,6 +260,9 @@ async def post_topox(request: TopoxRequest) -> JSONResponse:
     try:
         # 使用 topo_service 保存文件（会自动触发复制到 AIGC 目标目录）
         response = await topo_service.save_topox(request, "default.topox")
+
+        # 保存设备列表到 aigc.json（包含 text 和 portlist）
+        topo_service.save_device_list_to_aigc_json(request.network)
 
         logger.info(f"成功保存 topox 文件: {response.file_path}")
 
@@ -292,7 +324,7 @@ async def get_physical_devices() -> JSONResponse:
         response_message = "获取成功"
 
         if deploy_status == "deployed" and device_list:
-            # 部署成功 - 添加设备连接信息（包括 title）
+            # 部署成功 - 添加设备连接信息（包括 title、text 和 portlist）
             device_attrs_map = {}
             for device_info in device_list:
                 device_name = device_info.get("name")
@@ -303,7 +335,9 @@ async def get_physical_devices() -> JSONResponse:
                         "type": device_info.get("type"),
                         "executorip": device_info.get("executorip"),
                         "userip": device_info.get("userip"),
-                        "title": device_info.get("title", device_name)  # 添加 title 属性，默认使用设备名
+                        "title": device_info.get("title", device_name),  # 添加 title 属性，默认使用设备名
+                        "text": device_info.get("text"),  # 添加 text 属性
+                        "portlist": device_info.get("portlist")  # 添加 portlist 属性
                     }
 
             # 为设备列表中的每个设备添加属性

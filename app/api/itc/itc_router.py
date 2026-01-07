@@ -8,6 +8,7 @@ from app.models.itc.itc_models import (
 )
 from app.services.itc.itc_service import itc_service
 from app.models.common import BaseResponse
+from app.core.config import settings
 
 router = APIRouter( tags=["ITC 自动化测试"])
 
@@ -90,6 +91,18 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
             unc_topofile = f"//10.144.41.149/webide/aigc_tool/{username}"
 
 
+        # 保存 versionPath 和 deviceType 到全局变量
+        version_path = request.get_version_path()
+        device_type = request.devicetype
+
+        if version_path:
+            settings.set_version_path(version_path)
+            logger.info(f"已设置版本路径: {version_path}")
+
+        if device_type:
+            settings.set_device_type(device_type)
+            logger.info(f"已设置设备类型: {device_type}")
+
         # 启动后台部署任务
         itc_service.start_background_deploy(request, default_topox_file, unc_topofile)
 
@@ -110,6 +123,31 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
         import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"提交部署任务失败: {error_detail}")
+
+
+@router.get("/deploy-info", response_model=BaseResponse)
+async def get_deploy_info():
+    """
+    获取部署信息
+
+    返回当前保存的版本路径和设备类型信息
+    """
+    try:
+        version_path = settings.get_version_path()
+        device_type = settings.get_device_type()
+
+        return BaseResponse(
+            status="ok",
+            message="获取部署信息成功",
+            data={
+                "versionPath": version_path,
+                "deviceType": device_type
+            }
+        )
+    except Exception as e:
+        import traceback
+        error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=f"获取部署信息失败: {error_detail}")
 
 
 

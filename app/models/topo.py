@@ -1,10 +1,17 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+class PortInfo(BaseModel):
+    """端口信息模型"""
+    name: str = Field(description="端口名称")
+    type: str = Field(description="端口类型")
+
 class Device(BaseModel):
     """设备模型"""
     name: str = Field(description="设备名称")
     location: str = Field(description="设备位置")
+    text: Optional[str] = Field(None, description="设备文本描述")
+    portlist: Optional[List[PortInfo]] = Field(default_factory=list, description="端口列表")
 
 class Link(BaseModel):
     """链路模型"""

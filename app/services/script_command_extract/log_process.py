@@ -110,16 +110,46 @@ class LOGPROCESS:
         
         # 获取第二个元素（索引为1）
         title_string = title_data[1]
-        
-        # 查找 DUT 信息（假设格式为 "DUTX(描述)"）
-        if "DUT" in title_string:
-            # 提取 DUT1 这样的标识符
-            import re
-            match = re.search(r'DUT\d+', title_string)
-            if match:
-                return match.group()
-        
+
+        # 找到第一个左括号和右括号的位置
+        left = title_string.find('(')
+        right = title_string.find(')', left)  # 从left位置开始找右括号
+
+        if left != -1 and right != -1:
+            result = title_string[left+1:right]
+            return result
+
         return None
+
+    def get_expect_string_new(self, check_command_info):
+
+        results = []
+
+        cmd_start = check_command_info.find("{'cmd'")
+        if cmd_start != -1:
+            dict_str = check_command_info[cmd_start:]
+            try:
+                extracted_dict = eval(dict_str)
+                if 'expect' in extracted_dict:
+                    expect_list = extracted_dict['expect']
+                    if expect_list:
+                        for item in expect_list:
+                            results.append({
+                                'type': '包含',
+                                'content': str(item)
+                            })
+                if 'not_expect' in extracted_dict:
+                    expect_list = extracted_dict['expect']
+                    if expect_list:
+                        for item in expect_list:
+                            results.append({
+                                'type': '不包含',
+                                'content': str(item)
+                            })
+
+            except Exception as e:
+                print(f"转换失败: {e}")
+        return results
 
     def get_expect_string(self, check_res):
         """
@@ -132,7 +162,7 @@ class LOGPROCESS:
             list: 包含所有提取结果的列表，每个元素是一个字典，包含字段类型和内容
         """
         results = []
-        
+
         # 按换行符分割文本
         lines = check_res.split('\n')
         
@@ -179,8 +209,37 @@ class LOGPROCESS:
                             'type': '不包含',
                             'content': content
                         })
-        
+
         return results
+
+    def get_command_exec_result(self, exec_info):
+        lines = exec_info.split('\n')
+        result_lines = []
+        for i, line in enumerate(lines):
+            if line.startswith('<') or line.startswith('['):
+                command_exec_res = {}
+                # 找到第一个>或]的位置
+                if line.startswith('<'):
+                    end_char = '>'
+                else:  # line.startswith('[')
+                    end_char = ']'
+                
+                # 提取<或[和>或]之间的内容
+                start_idx = 1  # 跳过<或[
+                end_idx = line.find(end_char, start_idx)
+                
+                if end_idx != -1:
+                    content = line[end_idx + 1:]
+                    if i < len(lines)-1:
+                        next_line = lines[i + 1]
+                        if next_line.endswith('^'):
+                            command_exec_res[content] = "FAIL"
+                        else:
+                            command_exec_res[content] = "PASS"
+                    else:
+                        command_exec_res[content] = "PASS"
+                    result_lines.append(command_exec_res)
+        return result_lines
 
     def base_log_info_get(self,log_dict):
         log_info = {}
@@ -238,12 +297,10 @@ class LOGPROCESS:
                     log_info = self.base_log_info_get(check_send_dict)
                     check_info["flag"] = "check"
                     check_info.update(log_info)
-                elif "CheckCommand" in key:
-                    check_exec_info = check_log[key]
-                    if isinstance(check_exec_info, dict):
-                        check_res = check_exec_info["CheckResult"]
-                        expect_info_list = self.get_expect_string(check_res)
-                        check_info["expect"] = expect_info_list
+                if "Parameter" in key:
+                    check_command_info = check_log[key]
+                    expect_info_list = self.get_expect_string_new(check_command_info)
+                    check_info["expect"] = expect_info_list
             check_info["exec_res"] = check_log["Result"]
         elif isinstance(check_log, list):
             last_check_dict = check_log[-1]
@@ -254,16 +311,12 @@ class LOGPROCESS:
                     log_info = self.base_log_info_get(check_send_dict)
                     check_info["flag"] = "check"
                     check_info.update(log_info)
-                elif "CheckCommand" in key:
-                    check_exec_info = last_check_dict[key]
-                    if isinstance(check_exec_info, dict):
-                        check_res = check_exec_info["CheckResult"]
-                        expect_info_list = self.get_expect_string(check_res)
-                        #print(f"key:{key}, check_res:{check_res}")
-                        check_info["expect"] = expect_info_list
+                if "Parameter" in key:
+                    check_command_info = last_check_dict[key]
+                    expect_info_list = self.get_expect_string_new(check_command_info)
+                    check_info["expect"] = expect_info_list
             check_info["exec_res"] = last_check_dict["Result"]
 
-        #print(check_info["expect"])
         return check_info
 
     def conftest_command_info_get(self, info_dict, flag, teardown_send_flag = 0):
@@ -408,51 +461,7 @@ class LOGPROCESS:
                 result.append(error_info)
             else:
                 error_info = {}
-                single_stepLists = step["stepLists"]
-                if "Error_occurred" in step:
-                    error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
-                if isinstance(single_stepLists, dict):
-                    item = single_stepLists
-                    if "Title" in item:
-                        action = item["Title"]
-                        if "METHOD" in action:
-                            send_info = self.send_info_get(item)
-                            send_info["func"] = step_func
-                            send_info["step_seq"] = step_num
-                            result.append(send_info)
-                        elif "CheckCommand" in item:
-                            check_log = item["CheckCommand"]
-                            check_info = self.check_command_info_get(check_log)
-                            check_info["func"] = step_func
-                            check_info["step_seq"] = step_num
-                            result.append(check_info)
-                else:
-                    for item in single_stepLists:
-                        if "Title" in item:
-                            action = item["Title"]
-                            if "METHOD" in action:
-                                send_info = self.send_info_get(item)
-                                send_info["func"] = step_func
-                                send_info["step_seq"] = step_num
-                                result.append(send_info)
-                            elif "CheckCommand" in item:
-                                check_log = item["CheckCommand"]
-                                check_info = self.check_command_info_get(check_log)
-                                check_info["func"] = step_func
-                                check_info["step_seq"] = step_num
-                                result.append(check_info)
-                if error_info:
-                    result.append(error_info)
-        else:
-            for step in steps:
-                step_num = step_num + 1
-                step_name_str = step["Title"][-1]
-                step_func = step_name_str.split(":", 1)[0]
-                if "stepLists" not in step and "Error_occurred" in step:
-                    error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
-                    result.append(error_info)
-                else:
-                    error_info = {}
+                if "stepLists" in step:
                     single_stepLists = step["stepLists"]
                     if "Error_occurred" in step:
                         error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
@@ -488,6 +497,52 @@ class LOGPROCESS:
                                     result.append(check_info)
                     if error_info:
                         result.append(error_info)
+        else:
+            for step in steps:
+                step_num = step_num + 1
+                step_name_str = step["Title"][-1]
+                step_func = step_name_str.split(":", 1)[0]
+                if "stepLists" not in step and "Error_occurred" in step:
+                    error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
+                    result.append(error_info)
+                else:
+                    error_info = {}
+                    if "stepLists" in step:
+                        single_stepLists = step["stepLists"]
+                        if "Error_occurred" in step:
+                            error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
+                        if isinstance(single_stepLists, dict):
+                            item = single_stepLists
+                            if "Title" in item:
+                                action = item["Title"]
+                                if "METHOD" in action:
+                                    send_info = self.send_info_get(item)
+                                    send_info["func"] = step_func
+                                    send_info["step_seq"] = step_num
+                                    result.append(send_info)
+                                elif "CheckCommand" in item:
+                                    check_log = item["CheckCommand"]
+                                    check_info = self.check_command_info_get(check_log)
+                                    check_info["func"] = step_func
+                                    check_info["step_seq"] = step_num
+                                    result.append(check_info)
+                        else:
+                            for item in single_stepLists:
+                                if "Title" in item:
+                                    action = item["Title"]
+                                    if "METHOD" in action:
+                                        send_info = self.send_info_get(item)
+                                        send_info["func"] = step_func
+                                        send_info["step_seq"] = step_num
+                                        result.append(send_info)
+                                    elif "CheckCommand" in item:
+                                        check_log = item["CheckCommand"]
+                                        check_info = self.check_command_info_get(check_log)
+                                        check_info["func"] = step_func
+                                        check_info["step_seq"] = step_num
+                                        result.append(check_info)
+                        if error_info:
+                            result.append(error_info)
         return result
 
     def process_up_or_down_list(self, data_list, func):
@@ -574,117 +629,33 @@ class LOGPROCESS:
 
         return total_step_dict
 
-    def process_conftest_setup_list(self, data_list):
-        """
-        处理包含lay_list的列表，按指定规则排序
-        
-        Args:
-            data_list: 包含lay_list项的列表
-        
-        Returns:
-            list: 排序后的结果
-        """
-        # 筛选出符合条件的字典
-        """
-        valid_items = [item for item in data_list 
-                       if isinstance(item, dict) and 
-                          'lay_list' in item and 
-                          isinstance(item['lay_list'], list)]"""
+    def process_conftest_data_list(self, data_list,func):
         valid_items = []
+        fail_data_item = {}
+        for item_data in data_list:
+            if item_data.get("func") == func and "fail_type" in item_data and item_data["fail_type"] == "func_level":
+                fail_data_item = item_data
+            elif item_data.get("func") == func:
+                valid_items.append(item_data)
 
-        for item in data_list:
-            # 检查1: 是否是字典
-            if not isinstance(item, dict):
-                #print(item)
-                break
-            
-            # 检查2: 是否包含'lay_list'键
-            if 'lay_list' not in item:
-                continue
-            
-            # 检查3: 'lay_list'的值是否是列表
-            if not isinstance(item['lay_list'], list):
-                continue
-            
-            # 所有条件都满足，添加到结果列表
-            valid_items.append(item)
-
-        # 先按前两个数值排序，长度不同的情况特殊处理
-        def custom_sort_key(item):
-            lay_list = item['lay_list']
-            sort_elements = lay_list[0:]
-            
-            # 将元素转换为可比较的数字
-            numeric_elements = []
-            for elem in sort_elements:
-                try:
-                    numeric_elements.append(float(elem))
-                except (ValueError, TypeError):
-                    numeric_elements.append(float('inf'))
-            
-            # 返回一个元组：前两个数值 + 长度信息（确保数值比较优先）
-            return (
-                numeric_elements[0] if len(numeric_elements) > 0 else float('inf'),
-                numeric_elements[1] if len(numeric_elements) > 1 else float('inf'),
-                len(lay_list)  # 最后考虑长度
-            )
-
-        sorted_items = sorted(valid_items, key=custom_sort_key)
-        return sorted_items
-
-    def process_conftest_teardown_list(self, data_list):
-        """
-        处理包含lay_list的列表，按指定规则排序
-        
-        Args:
-            data_list: 包含lay_list项的列表
-        
-        Returns:
-            list: 排序后的结果
-        """
-        # 筛选出符合条件的字典
-        valid_items = [item for item in data_list 
-                       if isinstance(item, dict) and 
-                          'lay_list' in item and 
-                          isinstance(item['lay_list'], list) and
-                          len(item['lay_list']) >= 3]
-        
-        # 先按前两个数值排序，长度不同的情况特殊处理
-        def custom_sort_key(item):
-            lay_list = item['lay_list']
-            sort_elements = lay_list[2:]
-
-            # 将元素转换为可比较的数字
-            numeric_elements = []
-            for elem in sort_elements:
-                try:
-                    numeric_elements.append(float(elem))
-                except (ValueError, TypeError):
-                    numeric_elements.append(float('inf'))
-            
-            # 返回一个元组：前两个数值 + 长度信息（确保数值比较优先）
-            return (
-                numeric_elements[0] if len(numeric_elements) > 0 else float('inf'),
-                numeric_elements[1] if len(numeric_elements) > 1 else float('inf'),
-                len(lay_list)  # 最后考虑长度
-            )
-        
-        sorted_items = sorted(valid_items, key=custom_sort_key)
-        return sorted_items
+        if fail_data_item:
+            valid_items.append(fail_data_item)
+        return valid_items
 
     def process_conftest_list(self, data_list, flag):
         sorted_items = []
         if "setup" == flag:
             #print(data_list)
-            sorted_items = self.process_conftest_setup_list(data_list)
+            sorted_items = self.process_conftest_data_list(data_list,"setup")
             #print(sorted_items)
         elif "teardown" == flag:
-            sorted_items = self.process_conftest_teardown_list(data_list)
+            sorted_items = self.process_conftest_data_list(data_list,"teardown")
         return sorted_items
 
 
     def match_command_and_exe_info(self, data):
         res = []
+        command_seq = 0
         commands = data['send_commands']
         exec_info = data['exec_info']
         exec_res = data['exec_res']
@@ -700,13 +671,36 @@ class LOGPROCESS:
             res.append(info_dict)
             return res
         else:
-            for command in commands:
-                info_dict = {}
-                info_dict['cmd'] = command
-                info_dict['exec_info'] = exec_info
-                info_dict['exec_res'] = exec_res
-                info_dict['expect'] = check_expect
-                res.append(info_dict)
+            result_lines = self.get_command_exec_result(exec_info)
+            if len(result_lines) > 0:
+                for command in commands:
+                    info_dict = {}
+                    if command_seq < len(result_lines) and command in result_lines[command_seq]:
+                        info_dict['exec_res'] = result_lines[command_seq][command]
+                        command_seq = command_seq + 1
+                    elif command_seq != 0 and command_seq < len(result_lines) and command not in result_lines[command_seq]:
+                        info_dict['exec_res'] = exec_res
+                        command_seq = command_seq + 1
+                    elif 0 == command_seq and command not in result_lines[command_seq]:
+                        if "end" == command or "ctrl+z" == command:
+                            info_dict['exec_res'] = "PASS"
+                        else:
+                            info_dict['exec_res'] = exec_res
+                    else:
+                        info_dict['exec_res'] = exec_res
+                        command_seq = command_seq + 1
+                    info_dict['cmd'] = command
+                    info_dict['exec_info'] = exec_info
+                    info_dict['expect'] = check_expect
+                    res.append(info_dict)
+            else:
+                for command in commands:
+                    info_dict = {}
+                    info_dict['cmd'] = command
+                    info_dict['exec_info'] = exec_info
+                    info_dict['exec_res'] = exec_res
+                    info_dict['expect'] = check_expect
+                    res.append(info_dict)
         return res
 
     def gen_command_info(self, data_list):
@@ -779,6 +773,7 @@ class LOGPROCESS:
         conftest_res = {}
         sorted_conftest_lists = self.process_conftest_list(data_list, flag)
         conftest_res = self.gen_command_info(sorted_conftest_lists)
+        #print(conftest_res)
         return conftest_res
 
     def get_func_description(self, json_data):
@@ -985,6 +980,10 @@ class LOGPROCESS:
                 for dut_info in setup_info:
                     for dut_key, dut_value in dut_info.items():
                         if not dut_key:
+                            for dut_commond in dut_value:
+                                if "fail_type" in dut_commond:
+                                    fail_info = dut_commond["exec_info"]
+                                    splice_res = splice_res + "命令执行失败: " + fail_info + "\n"
                             continue
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
@@ -1020,6 +1019,10 @@ class LOGPROCESS:
                 for dut_info in teardown_info:
                     for dut_key, dut_value in dut_info.items():
                         if not dut_key:
+                            for dut_commond in dut_value:
+                                if "fail_type" in dut_commond:
+                                    fail_info = dut_commond["exec_info"]
+                                    splice_res = splice_res + "命令执行失败: " + fail_info + "\n"
                             continue
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
@@ -1069,15 +1072,16 @@ class LOGPROCESS:
         data = self.read_json_file(file_path)
         log_command_info = {}
         log_commands = []
-        #setup_commands = []
+        tail_error_info = []
         #teardown_commands = []
         if "setup" == flag:
             if isinstance(data, dict):
                 for key, value in data.items():
                     if "create_interface" in key or "atf_retry" in key or "send" in key or "CheckCommand" in key:
-                        print("111")
                         step_info = self.conftest_command_info_get(value, flag)
                         log_commands.extend(step_info)
+                    elif "Error_occurred" in key:
+                        tail_error_info = self.command_error_info_process(value,"setup")
         elif "teardown" == flag:
             if isinstance(data, dict):
                 for key, value in data.items():
@@ -1087,7 +1091,11 @@ class LOGPROCESS:
                     elif "delete_interface" in key:
                         step_info = self.conftest_command_info_get(value, flag)
                         log_commands.extend(step_info)
+                    elif "Error_occurred" in key:
+                        tail_error_info = self.command_error_info_process(value,"teardown")
 
+        log_commands.extend(tail_error_info)
+        #print(log_commands)
         log_command_info = self.conftest_command_arrange(log_commands,flag)
         return log_command_info
 
