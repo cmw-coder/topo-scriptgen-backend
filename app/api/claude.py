@@ -38,7 +38,7 @@ def get_task_log_file(task_id: str) -> str:
 def write_task_log(task_id: str, content: str):
     """写入任务日志文件
     格式：时:分:秒 log内容
-    每行内容都有独立的时间戳
+    保持原始换行符，不转义为 \\n
     """
     try:
         from datetime import datetime
@@ -46,14 +46,15 @@ def write_task_log(task_id: str, content: str):
         log_file = get_task_log_file(task_id)
         timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # 处理多行内容：每一行都添加时间戳
+        # 直接写入内容，保持原始的 \n 换行符
+        # 将换行后的每一行都加上时间戳，但保持 \n 作为实际换行符
         lines = content.split('\n')
         log_lines = []
         for line in lines:
-            if line.strip():  # 忽略空行
-                log_lines.append(f"{timestamp} {line}")
+            # 为每行添加时间戳（包括空行，保持格式）
+            log_lines.append(f"{timestamp} {line}")
 
-        # 一次性写入所有行
+        # 写入所有行，使用 \n 作为换行符（不转义）
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write('\n'.join(log_lines) + '\n')
     except Exception as e:
