@@ -56,7 +56,7 @@ class TopoService:
             device_list_elem = ET.SubElement(network_elem, "DEVICE_LIST")
             for device in device_list:
                 # 跳过有text属性的设备（text不为空，这不是设备对象）
-                if device.text:
+                if getattr(device, 'text', None):
                     logger.debug(f"跳过带有text属性的设备: {device.name}")
                     continue
 
@@ -94,9 +94,10 @@ class TopoService:
                     port_type = ""
                     if device_name in device_map:
                         device = device_map[device_name]
-                        if device.portlist:
+                        device_portlist = getattr(device, 'portlist', None)
+                        if device_portlist:
                             # 在portlist中查找匹配的端口
-                            for port_info in device.portlist:
+                            for port_info in device_portlist:
                                 if port_info.name == port_name and port_info.type:
                                     port_type = port_info.type
                                     break
@@ -369,13 +370,15 @@ class TopoService:
             }
 
             # 添加可选字段
-            if new_device.text:
-                new_device_dict["text"] = new_device.text
+            device_text = getattr(new_device, 'text', None)
+            if device_text:
+                new_device_dict["text"] = device_text
 
-            if new_device.portlist:
+            device_portlist = getattr(new_device, 'portlist', None)
+            if device_portlist:
                 new_device_dict["portlist"] = [
                     {"name": port.name, "type": port.type}
-                    for port in new_device.portlist
+                    for port in device_portlist
                 ]
 
             # 如果同名设备已存在，只保留新设备中不存在的旧属性
