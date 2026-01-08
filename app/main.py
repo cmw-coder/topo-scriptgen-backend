@@ -15,6 +15,7 @@ from app.core.path_manager import path_manager
 from app.api import files, claude
 from app.api import topo_simple as topo
 from app.api import topo_gns3
+from app.api import itc_logs
 from app.api.itc.itc_router import router as itc_router
 from app.middleware.api_call_tracker import APICallTrackerMiddleware
 from app.services.auto_undeploy_service import auto_undeploy_service
@@ -170,6 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(topo.router, prefix="")  # topo路由已经在内部定义了完整路径
     app.include_router(claude.router, prefix="/api/v1")
     app.include_router(topo_gns3.router, prefix="/api/v1")
+    app.include_router(itc_logs.router, prefix="/api/v1")
     app.include_router(itc_router, prefix="/api/v1")
 
     # 健康检查端点

@@ -1,8 +1,6 @@
 """
 用户上下文管理工具
 用于获取用户名并将其保存为全局环境变量
-
-AI_FingerPrint_UUID: 20251224-nhJdWsTr
 """
 import os
 import getpass
