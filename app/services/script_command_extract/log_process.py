@@ -286,6 +286,7 @@ class LOGPROCESS:
         is_first = 0
         expect_info_list = []
         check_res = ""
+        is_parameter_exist = 0
         if isinstance(check_log, dict):
             for key in check_log:
                 if "Error_occurred" in key:
@@ -298,9 +299,18 @@ class LOGPROCESS:
                     check_info["flag"] = "check"
                     check_info.update(log_info)
                 if "Parameter" in key:
+                    print("新版本日志")
+                    is_parameter_exist = 1
                     check_command_info = check_log[key]
                     expect_info_list = self.get_expect_string_new(check_command_info)
                     check_info["expect"] = expect_info_list
+                elif "CheckCommand" in key and 0 == is_parameter_exist:
+                    print("旧版本日志")
+                    check_exec_info = check_log[key]
+                    if isinstance(check_exec_info, dict):
+                        check_res = check_exec_info["CheckResult"]
+                        expect_info_list = self.get_expect_string(check_res)
+                        check_info["expect"] = expect_info_list
             check_info["exec_res"] = check_log["Result"]
         elif isinstance(check_log, list):
             last_check_dict = check_log[-1]
@@ -312,9 +322,19 @@ class LOGPROCESS:
                     check_info["flag"] = "check"
                     check_info.update(log_info)
                 if "Parameter" in key:
+                    print("新版本日志")
+                    is_parameter_exist = 1
                     check_command_info = last_check_dict[key]
                     expect_info_list = self.get_expect_string_new(check_command_info)
                     check_info["expect"] = expect_info_list
+                elif "CheckCommand" in key and 0 == is_parameter_exist:
+                    print("旧版本日志")
+                    check_exec_info = last_check_dict[key]
+                    if isinstance(check_exec_info, dict):
+                        check_res = check_exec_info["CheckResult"]
+                        expect_info_list = self.get_expect_string(check_res)
+                        #print(f"key:{key}, check_res:{check_res}")
+                        check_info["expect"] = expect_info_list
             check_info["exec_res"] = last_check_dict["Result"]
 
         return check_info
@@ -656,10 +676,10 @@ class LOGPROCESS:
     def match_command_and_exe_info(self, data):
         res = []
         command_seq = 0
-        commands = data.get('send_commands', [])
-        exec_info = data.get('exec_info', '')
-        exec_res = data.get('exec_res', '')
-        check_expect = data.get('expect', [])
+        commands = data['send_commands']
+        exec_info = data['exec_info']
+        exec_res = data['exec_res']
+        check_expect = data['expect']
         if not commands:
             info_dict = {}
             info_dict['cmd'] = commands
