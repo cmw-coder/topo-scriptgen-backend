@@ -321,6 +321,12 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
     ) -> None:
         """在用户目录中创建或更新 .aigc_tool/aigc.json 文件
 
+        如果 aigc.json 已存在且包含 device_list，则更新以下属性：
+        - exec_ip（全局执行机IP）
+        - 设备的 executorip、host、port、type、title 属性
+
+        不修改设备的其他属性（如 name、userip 等其他自定义字段）
+
         Args:
             topox_file: topox 文件的本地绝对路径
             version_path: 版本路径（可选）
@@ -335,6 +341,9 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         os.makedirs(aigc_tool_dir, exist_ok=True)
         logger.info(f"确保 .aigc_tool 目录存在: {aigc_tool_dir}")
 
+        # aigc.json 文件路径
+        aigc_json_path = os.path.join(aigc_tool_dir, "aigc.json")
+
         # 转换 version_path：将所有斜杠转换为双反斜杠
         # 输入示例: //10.153.3.125/cilibv9/V9R1/.../version/release
         # 输出示例: \\\\10.153.3.125\\cilibv9\\V9R1\\...\\version\\release
@@ -344,27 +353,127 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             converted_version_path = version_path.replace('/', '\\\\')
             logger.info(f"版本路径转换: {version_path} -> {converted_version_path}")
 
-        # 构造 aigc.json 数据
-        aigc_config = {
-            "topx_file": topox_file,
-            "version_path": converted_version_path,
-            "device_type": device_type
-        }
+        # 读取现有的 aigc.json（如果存在）
+        existing_config = None
+        if os.path.exists(aigc_json_path):
+            try:
+                with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                    existing_config = json.load(f)
+                logger.info(f"读取到现有的 aigc.json 配置")
+            except Exception as e:
+                logger.warning(f"读取现有 aigc.json 失败: {str(e)}，将创建新文件")
 
-        # 如果提供了 executorip，添加执行相关配置
-        if executorip:
-            aigc_config["exec_ip"] = executorip
-            aigc_config["username"] = "itc"
-            aigc_config["password"] = "auto_123"
-            logger.info(f"添加执行机配置: exec_ip={executorip}, username=itc, password=auto_123")
+        # 构造或更新 aigc.json 数据
+        if existing_config is None:
+            # 创建新配置
+            aigc_config = {
+                "topx_file": topox_file,
+                "version_path": converted_version_path,
+                "device_type": device_type
+            }
 
-        # 如果提供了 device_list，添加设备列表
-        if device_list:
-            aigc_config["device_list"] = device_list
-            logger.info(f"添加设备列表: 共 {len(device_list)} 个设备")
+            # 如果提供了 executorip，添加执行相关配置
+            if executorip:
+                aigc_config["exec_ip"] = executorip
+                aigc_config["username"] = "itc"
+                aigc_config["password"] = "auto_123"
+                logger.info(f"添加执行机配置: exec_ip={executorip}, username=itc, password=auto_123")
 
-        # aigc.json 文件路径
-        aigc_json_path = os.path.join(aigc_tool_dir, "aigc.json")
+            # 如果提供了 device_list，直接添加设备列表
+            if device_list:
+                aigc_config["device_list"] = device_list
+                logger.info(f"添加设备列表: 共 {len(device_list)} 个设备")
+
+        else:
+            # 更新现有配置
+            aigc_config = existing_config.copy()
+
+            # 更新基本字段
+            aigc_config["topx_file"] = topox_file
+            aigc_config["version_path"] = converted_version_path
+            aigc_config["device_type"] = device_type
+
+            # 更新执行机配置
+            if executorip:
+                aigc_config["exec_ip"] = executorip
+                aigc_config["username"] = "itc"
+                aigc_config["password"] = "auto_123"
+                logger.info(f"更新执行机配置: exec_ip={executorip}, username=itc, password=auto_123")
+
+            # 更新设备列表：只更新 executorip、host、port、type、title 属性
+            if device_list:
+                if "device_list" not in aigc_config:
+                    # 如果原来没有设备列表，直接添加
+                    aigc_config["device_list"] = device_list
+                    logger.info(f"添加新设备列表: 共 {len(device_list)} 个设备")
+                else:
+                    # 如果已有设备列表，按设备名称匹配并只更新特定属性
+                    existing_device_list = aigc_config["device_list"]
+
+                    # 创建设备名称到现有设备的映射
+                    existing_devices_map = {}
+                    for existing_device in existing_device_list:
+                        if isinstance(existing_device, dict) and "name" in existing_device:
+                            device_name = existing_device["name"]
+                            existing_devices_map[device_name] = existing_device
+
+                    # 更新或添加设备
+                    updated_device_list = []
+                    for new_device in device_list:
+                        if not isinstance(new_device, dict):
+                            continue
+
+                        device_name = new_device.get("name")
+                        if not device_name:
+                            # 如果没有名称，直接添加新设备
+                            updated_device_list.append(new_device)
+                            logger.info(f"添加无名称设备: {new_device}")
+                            continue
+
+                        if device_name in existing_devices_map:
+                            # 设备已存在，只更新 executorip、host、port、type、title 属性
+                            existing_device = existing_devices_map[device_name].copy()
+
+                            # 更新 executorip
+                            if "executorip" in new_device:
+                                existing_device["executorip"] = new_device["executorip"]
+
+                            # 更新 host
+                            if "host" in new_device:
+                                existing_device["host"] = new_device["host"]
+
+                            # 更新 port
+                            if "port" in new_device:
+                                existing_device["port"] = new_device["port"]
+
+                            # 更新 type（telnet/ssh）
+                            if "type" in new_device:
+                                existing_device["type"] = new_device["type"]
+                            # 更新 title
+                            if "title" in new_device:
+                                existing_device["title"] = new_device["title"]
+
+                            # 更新 userip（如果有的话）
+                            if "userip" in new_device:
+                                existing_device["userip"] = new_device["userip"]
+
+                            updated_device_list.append(existing_device)
+                            logger.info(f"更新设备 {device_name} 的 executorip/host/port/type/title 属性")
+                        else:
+                            # 新设备，直接添加
+                            updated_device_list.append(new_device)
+                            logger.info(f"添加新设备: {device_name}")
+
+                    # 保留原有列表中不存在于新列表的设备
+                    existing_device_names = {d.get("name") for d in device_list if isinstance(d, dict) and "name" in d}
+                    for existing_device in existing_device_list:
+                        if isinstance(existing_device, dict) and "name" in existing_device:
+                            if existing_device["name"] not in existing_device_names:
+                                updated_device_list.append(existing_device)
+                                logger.info(f"保留原有设备: {existing_device['name']}")
+
+                    aigc_config["device_list"] = updated_device_list
+                    logger.info(f"更新设备列表完成: 共 {len(updated_device_list)} 个设备")
 
         # 写入 JSON 文件
         with open(aigc_json_path, 'w', encoding='utf-8') as f:

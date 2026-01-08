@@ -22,9 +22,7 @@ async def read_file_or_directory(
     path: str = Query(..., description="文件或目录路径"),
     encoding: str = Query(default="utf-8", description="文件编码")
 ):
-    """读取文件或目录内容
-AI_FingerPrint_UUID: 20251224-TXpcoB1x
-"""
+    """读取文件或目录内容"""
     try:
         # 判断是文件还是目录
         resolved_path = file_service.path_manager.resolve_path(path)

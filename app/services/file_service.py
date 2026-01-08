@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Optional, Union
 import logging
 from datetime import datetime
+import glob
 
 from app.core.path_manager import path_manager
 from app.core.config import settings
@@ -82,16 +83,10 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
                 )
 
             if not resolved_path.exists():
-                # 特殊处理：如果是 spec.md 文件不存在，返回空内容
+                # 特殊处理：如果是 spec.md 文件，在工作目录下全局递归查找最新的文件
                 if resolved_path.name == "spec.md":
-                    return FileOperationResponse(
-                        path=file_path,
-                        operation="read",
-                        success=True,
-                        content="",
-                        size=0,
-                        message="文件读取成功"
-                    )
+                    return await self._find_latest_spec_file(file_path, encoding)
+
                 return FileOperationResponse(
                     path=file_path,
                     operation="read",
@@ -341,6 +336,114 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
             logger.error(f"读取目录失败: {directory_path}, 错误: {str(e)}")
 
         return items
+
+    async def _find_latest_spec_file(self, file_path: str, encoding: str = "utf-8") -> FileOperationResponse:
+        """在工作目录下全局递归查找最新的 spec.md 文件
+
+        Args:
+            file_path: 请求的文件路径
+            encoding: 文件编码
+
+        Returns:
+            FileOperationResponse: 如果找到最新文件则返回其内容，否则返回空内容
+        """
+        try:
+            work_dir = self.path_manager.get_project_root()
+
+            logger.info(f"在工作目录 {work_dir} 下递归查找所有 spec.md 文件")
+
+            # 递归查找所有 spec.md 文件
+            pattern = os.path.join(work_dir, "**/spec.md")
+            spec_files = glob.glob(pattern, recursive=True)
+
+            if not spec_files:
+                logger.info(f"未找到任何 spec.md 文件，返回空内容")
+                return FileOperationResponse(
+                    path=file_path,
+                    operation="read",
+                    success=True,
+                    content="",
+                    size=0,
+                    message="未找到 spec.md 文件"
+                )
+
+            logger.info(f"找到 {len(spec_files)} 个 spec.md 文件: {spec_files}")
+
+            # 按修改时间排序，找到最新的文件
+            spec_files_with_time = []
+            for spec_file in spec_files:
+                try:
+                    mtime = os.path.getmtime(spec_file)
+                    spec_files_with_time.append((spec_file, mtime))
+                except OSError as e:
+                    logger.warning(f"无法获取文件 {spec_file} 的修改时间: {str(e)}")
+                    continue
+
+            if not spec_files_with_time:
+                logger.info(f"无法获取任何文件的修改时间，返回空内容")
+                return FileOperationResponse(
+                    path=file_path,
+                    operation="read",
+                    success=True,
+                    content="",
+                    size=0,
+                    message="无法读取 spec.md 文件"
+                )
+
+            # 按修改时间降序排序，获取最新文件
+            spec_files_with_time.sort(key=lambda x: x[1], reverse=True)
+            latest_file = spec_files_with_time[0][0]
+            latest_mtime = spec_files_with_time[0][1]
+            latest_time_str = datetime.fromtimestamp(latest_mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+            logger.info(f"找到最新的 spec.md 文件: {latest_file} (修改时间: {latest_time_str})")
+
+            # 检查文件大小
+            file_size = os.path.getsize(latest_file)
+            if file_size > settings.MAX_FILE_SIZE:
+                return FileOperationResponse(
+                    path=file_path,
+                    operation="read",
+                    success=False,
+                    message=f"文件过大，最大支持 {settings.MAX_FILE_SIZE} 字节"
+                )
+
+            # 读取文件内容
+            async with aiofiles.open(latest_file, 'r', encoding=encoding) as file:
+                content = await file.read()
+
+            # 获取相对路径
+            try:
+                relative_path = self.path_manager.get_relative_path(latest_file)
+                if relative_path:
+                    # 转换为正斜杠格式
+                    relative_path = relative_path.replace("\\", "/")
+                    logger.info(f"返回文件的相对路径: {relative_path}")
+                else:
+                    relative_path = file_path
+            except Exception:
+                relative_path = file_path
+
+            return FileOperationResponse(
+                path=relative_path,
+                operation="read",
+                success=True,
+                content=content,
+                size=file_size,
+                message=f"成功读取最新的 spec.md 文件 (修改时间: {latest_time_str})"
+            )
+
+        except Exception as e:
+            logger.error(f"查找最新 spec.md 文件时出错: {str(e)}")
+            # 出错时返回空内容
+            return FileOperationResponse(
+                path=file_path,
+                operation="read",
+                success=True,
+                content="",
+                size=0,
+                message=f"查找 spec.md 文件时出错: {str(e)}"
+            )
 
 # 创建文件服务实例
 file_service = FileService()
