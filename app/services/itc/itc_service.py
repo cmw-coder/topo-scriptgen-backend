@@ -238,6 +238,74 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             logger.warning(f"读取 aigc.json 时出错: {str(e)}")
             return None
 
+    def _cleanup_aigc_config_after_deploy_failure(self) -> None:
+        """在 deploy 失败后清理 aigc.json 配置
+
+        将以下字段置空（空字符串）：
+        - exec_ip 字段
+        - 设备列表中每个设备的 host、port、type、title 字段
+
+        Returns:
+            None
+        """
+        try:
+            work_dir = settings.get_work_directory()
+            aigc_json_path = os.path.join(work_dir, ".aigc_tool", "aigc.json")
+
+            # 检查文件是否存在
+            if not os.path.exists(aigc_json_path):
+                logger.info(f"aigc.json 文件不存在，无需清理: {aigc_json_path}")
+                return
+
+            # 读取文件
+            with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if not content:
+                    logger.info("aigc.json 文件为空，无需清理")
+                    return
+
+                config = json.loads(content)
+
+            # 记录清理前的内容
+            logger.info(f"清理前的 aigc.json 内容:\n{json.dumps(config, indent=2, ensure_ascii=False)}")
+
+            # 1. 将 exec_ip 字段置空
+            if "exec_ip" in config:
+                config["exec_ip"] = ""
+                logger.info("已将 exec_ip 字段置空")
+
+            # 2. 将设备列表中的 host、port、type、title 字段置空
+            if "device_list" in config and isinstance(config["device_list"], list):
+                device_count = 0
+                for device in config["device_list"]:
+                    if isinstance(device, dict):
+                        # 置空 host
+                        if "host" in device:
+                            device["host"] = ""
+                        # 置空 port
+                        if "port" in device:
+                            device["port"] = ""
+                        # 置空 type
+                        if "type" in device:
+                            device["type"] = ""
+                        # 置空 title
+                        if "title" in device:
+                            device["title"] = ""
+                        device_count += 1
+                logger.info(f"已将 {device_count} 个设备的 host、port、type、title 字段置空")
+
+            # 写回文件
+            with open(aigc_json_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"已更新 aigc.json 文件: {aigc_json_path}")
+            logger.info(f"清理后的 aigc.json 内容:\n{json.dumps(config, indent=2, ensure_ascii=False)}")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"解析 aigc.json 失败: {str(e)}")
+        except Exception as e:
+            logger.error(f"清理 aigc.json 时出错: {str(e)}")
+
     def _cleanup_aigc_config_after_undeploy(self) -> None:
         """在 undeploy 成功后清理 aigc.json 配置
 
@@ -774,6 +842,15 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
                     logger.error(f"部署失败 - return_code: {result.get('return_code')}")
                     logger.error(f"错误信息: {error_msg}")
 
+                    # 清理 aigc.json 配置
+                    logger.info("=" * 80)
+                    logger.info("部署失败，开始清理 aigc.json 配置")
+                    logger.info("=" * 80)
+                    self._cleanup_aigc_config_after_deploy_failure()
+                    logger.info("=" * 80)
+                    logger.info("aigc.json 配置清理完成")
+                    logger.info("=" * 80)
+
                     settings.set_deploy_status("failed")
                     settings.set_deploy_error_message(error_msg)
                     logger.info("=" * 80)
@@ -782,6 +859,16 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
 
             except Exception as e:
                 logger.error(f"后台部署任务异常: {str(e)}", exc_info=True)
+
+                # 清理 aigc.json 配置
+                logger.info("=" * 80)
+                logger.info("部署异常，开始清理 aigc.json 配置")
+                logger.info("=" * 80)
+                self._cleanup_aigc_config_after_deploy_failure()
+                logger.info("=" * 80)
+                logger.info("aigc.json 配置清理完成")
+                logger.info("=" * 80)
+
                 settings.set_deploy_status("failed")
                 settings.set_deploy_error_message(f"部署异常: {str(e)}")
                 logger.info("=" * 80)
@@ -1026,5 +1113,156 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
 
         return SimpleResponse(**result)
 
+class ItcLogService:
+    """ITC日志文件服务类"""
+
+    def __init__(self):
+        """初始化ITC日志服务"""
+        self.log_base_path = "/opt/coder/statistics/build/aigc_tool"
+
+    def _get_user_log_dir(self, username: Optional[str] = None) -> Path:
+        """获取用户的ITC日志目录
+
+        Args:
+            username: 用户名，如果为None则使用当前系统用户名
+
+        Returns:
+            Path: 用户ITC日志目录的完整路径
+        """
+        if username is None:
+            # 使用 getpass 模块获取当前系统用户名（跨平台兼容）
+            import getpass
+            username = getpass.getuser()
+
+        # 构建ITC日志目录路径: /opt/coder/statistics/build/aigc_tool/{username}/log/
+        log_dir = Path(self.log_base_path) / username / "log"
+        return log_dir
+
+    async def get_itc_log_files(self, username: Optional[str] = None) -> tuple[bool, str, Optional[List[Dict[str, Any]]]]:
+        """获取指定用户的ITC日志文件列表
+
+        Args:
+            username: 用户名，如果为None则使用当前系统用户名
+
+        Returns:
+            tuple: (success, message, log_files)
+                - success: 是否成功
+                - message: 响应消息
+                - log_files: ITC日志文件信息列表，失败时为None
+        """
+        try:
+            log_dir = self._get_user_log_dir(username)
+
+            # 检查目录是否存在
+            if not log_dir.exists():
+                logger.warning(f"ITC日志目录不存在: {log_dir}")
+                return True, f"ITC日志目录不存在: {log_dir}", []
+
+            if not log_dir.is_dir():
+                logger.error(f"ITC日志路径不是目录: {log_dir}")
+                return False, f"ITC日志路径不是目录: {log_dir}", None
+
+            # 读取目录中的所有文件
+            log_files: List[Dict[str, Any]] = []
+            for file_path in log_dir.iterdir():
+                # 只处理文件，跳过目录
+                if file_path.is_file():
+                    try:
+                        # 获取文件信息
+                        stat = file_path.stat()
+
+                        # 格式化修改时间
+                        modified_time = datetime.fromtimestamp(
+                            stat.st_mtime
+                        ).strftime("%Y-%m-%d %H:%M:%S")
+
+                        # 创建ITC日志文件信息对象
+                        log_file_info = {
+                            "filename": file_path.name,
+                            "size": stat.st_size,
+                            "modified_time": modified_time
+                        }
+                        log_files.append(log_file_info)
+
+                    except Exception as e:
+                        logger.warning(f"无法读取文件信息 {file_path.name}: {str(e)}")
+                        continue
+
+            # 按文件名排序
+            log_files.sort(key=lambda x: x["filename"])
+
+            logger.info(f"成功获取ITC日志文件列表，共 {len(log_files)} 个文件")
+            return True, f"成功获取ITC日志文件列表，共 {len(log_files)} 个文件", log_files
+
+        except Exception as e:
+            logger.error(f"获取ITC日志文件列表失败: {str(e)}")
+            return False, f"获取ITC日志文件列表失败: {str(e)}", None
+
+    async def get_itc_log_content(self, filename: str, username: Optional[str] = None) -> tuple[bool, str, Optional[dict]]:
+        """读取指定ITC日志文件的内容
+
+        Args:
+            filename: ITC日志文件名
+            username: 用户名，如果为None则使用当前系统用户名
+
+        Returns:
+            tuple: (success, message, data)
+                - success: 是否成功
+                - message: 响应消息
+                - data: 包含文件信息的字典，失败时为None
+        """
+        try:
+            import aiofiles
+
+            # 验证文件名安全性，防止路径遍历攻击
+            if "/" in filename or "\\" in filename or ".." in filename:
+                logger.warning(f"检测到非法文件名: {filename}")
+                return False, "文件名包含非法字符", None
+
+            log_dir = self._get_user_log_dir(username)
+            file_path = log_dir / filename
+
+            # 检查文件是否存在
+            if not file_path.exists():
+                logger.warning(f"ITC日志文件不存在: {file_path}")
+                return False, f"ITC日志文件不存在: {filename}", None
+
+            if not file_path.is_file():
+                logger.error(f"路径不是文件: {file_path}")
+                return False, f"路径不是文件: {filename}", None
+
+            # 读取文件内容
+            async with aiofiles.open(file_path, mode="r", encoding="utf-8", errors="ignore") as f:
+                content = await f.read()
+
+            # 获取文件信息
+            stat = file_path.stat()
+            modified_time = datetime.fromtimestamp(
+                stat.st_mtime
+            ).strftime("%Y-%m-%d %H:%M:%S")
+
+            # 构建返回数据
+            data = {
+                "filename": filename,
+                "size": stat.st_size,
+                "modified_time": modified_time,
+                "content": content,
+                "encoding": "utf-8"
+            }
+
+            logger.info(f"成功读取ITC日志文件: {filename}, 大小: {stat.st_size} 字节")
+            return True, f"成功读取ITC日志文件: {filename}", data
+
+        except UnicodeDecodeError as e:
+            logger.error(f"文件编码错误: {str(e)}")
+            return False, f"文件编码错误，无法读取文件内容", None
+        except Exception as e:
+            logger.error(f"读取ITC日志文件失败: {str(e)}")
+            return False, f"读取ITC日志文件失败: {str(e)}", None
+
+
 # 创建 ITC 服务实例
 itc_service = ITCService()
+
+# 创建 ITC 日志服务实例
+itc_log_service = ItcLogService()

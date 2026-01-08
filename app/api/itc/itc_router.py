@@ -1,16 +1,20 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from typing import Optional
 from app.models.itc.itc_models import (
     NewDeployRequest,
     RunScriptRequest,
     ExecutorRequest,
     RunScriptResponse,
-    SimpleResponse
+    SimpleResponse,
+    ItcLogFileListResponse,
+    ItcLogFileContentRequest,
+    ItcLogFileContentResponse
 )
-from app.services.itc.itc_service import itc_service
+from app.services.itc.itc_service import itc_service, itc_log_service
 from app.models.common import BaseResponse
 from app.core.config import settings
 
-router = APIRouter( tags=["ITC 自动化测试"])
+router = APIRouter(tags=["ITC 自动化测试"])
 
 @router.post("/deploy", response_model=BaseResponse)
 async def deploy_environment(request: NewDeployRequest, background_tasks: BackgroundTasks):
@@ -418,5 +422,69 @@ async def resume_script(request: ExecutorRequest, background_tasks: BackgroundTa
         import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"恢复脚本失败: {error_detail}")
+
+
+# ========== ITC日志文件管理接口 ==========
+
+@router.get("/logs/list", response_model=ItcLogFileListResponse)
+async def get_itc_log_files():
+    """获取ITC日志文件列表
+
+    返回当前用户的ITC日志目录(/opt/coder/statistics/build/aigc_tool/{username}/log/)下的所有文件列表
+    自动使用当前系统用户名，无需传递参数
+
+    Returns:
+        ItcLogFileListResponse: 包含ITC日志文件列表的响应
+    """
+    try:
+        success, message, log_files = await itc_log_service.get_itc_log_files()
+
+        if success:
+            return ItcLogFileListResponse(
+                status="ok",
+                message=message,
+                data=log_files,
+                total_count=len(log_files) if log_files else 0
+            )
+        else:
+            raise HTTPException(status_code=400, detail=message)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取ITC日志文件列表失败: {str(e)}")
+
+
+@router.post("/logs/content", response_model=ItcLogFileContentResponse)
+async def get_itc_log_content(request: ItcLogFileContentRequest):
+    """获取ITC日志文件内容
+
+    根据文件名读取ITC日志文件的内容
+
+    Args:
+        request: 包含filename的请求体
+
+    Returns:
+        ItcLogFileContentResponse: 包含文件信息和内容的响应
+    """
+    try:
+        if not request.filename:
+            raise HTTPException(status_code=400, detail="文件名不能为空")
+
+        success, message, data = await itc_log_service.get_itc_log_content(request.filename)
+
+        if success:
+            return ItcLogFileContentResponse(
+                status="ok",
+                message=message,
+                data=data
+            )
+        else:
+            raise HTTPException(status_code=400, detail=message)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取ITC日志文件内容失败: {str(e)}")
 
 __all__ = ["router"]
