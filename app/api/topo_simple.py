@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["拓扑管理"])
 
-# 完全保留main2.py中的类型定义
 class Device(TypedDict):
     name: str
     location: str
@@ -34,12 +33,8 @@ class Network(TypedDict):
 class RequestBody(TypedDict):
     network: Network
 
-# 完全保留main2.py中的函数
 def _indent(elem: ET.Element, level: int = 0) -> None:
-    """Pretty-print XML by indenting in-place.
-    
-AI_FingerPrint_UUID: 20251225-cvGY8wTv
-"""
+    """Pretty-print XML by indenting in-place."""
     indent_str = "  "
     i = "\n" + level * indent_str
     if len(elem):
@@ -159,12 +154,11 @@ def parse_topox(xml_text: str) -> Network:
 
     return network
 
-# 完全保留main2.py的API端点，只修改路径适配
 @router.get("/api/v1/topox")
 async def get_topox() -> JSONResponse:
     logger.info("GET /api/v1/topox received")
     # 修改为使用新的路径管理系统，但保持原有的路径结构逻辑
-    # 原来是: Path.home() / "project" / "test_scripts" / "default.topox"
+    # 原来是: Path.home() / "project" / "default.topox"
     # 现在使用配置中的路径
     topox_path = path_manager.get_topox_dir() / "default.topox"
 

@@ -13,10 +13,7 @@ from app.utils.user_context import user_context
 logger = logging.getLogger(__name__)
 
 class TopoService:
-    """拓扑服务，处理topox文件的保存和转换
-    
-AI_FingerPrint_UUID: 20251225-LWJLVNvB
-"""
+    """拓扑服务，处理topox文件的保存和转换"""
 
     def __init__(self):
         self.path_manager = path_manager
@@ -37,7 +34,12 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
                 elem.tail = i
 
     def build_topox_xml(self, request: TopoxRequest) -> str:
-        """将请求转换为topox XML字符串"""
+        """将请求转换为topox XML字符串
+
+        规则：
+        1. 跳过解析存在text属性的设备（text不为空，这不是设备对象）
+        2. 解析链路时，如果对应设备的端口存在type且type不为空，则增加TYPE的值
+        """
         try:
             network_elem = ET.Element("NETWORK")
 
@@ -45,9 +47,19 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
             device_list = network.device_list or []
             link_list = network.link_list or []
 
-            # 添加设备列表
+            # 创建设备名称到设备的映射（用于后续查找端口类型）
+            device_map = {}
+            for device in device_list:
+                device_map[device.name] = device
+
+            # 添加设备列表（跳过有text属性的设备）
             device_list_elem = ET.SubElement(network_elem, "DEVICE_LIST")
             for device in device_list:
+                # 跳过有text属性的设备（text不为空，这不是设备对象）
+                if device.text:
+                    logger.debug(f"跳过带有text属性的设备: {device.name}")
+                    continue
+
                 device_elem = ET.SubElement(device_list_elem, "DEVICE")
                 prop_elem = ET.SubElement(device_elem, "PROPERTY")
                 ET.SubElement(prop_elem, "NAME").text = device.name or ""
@@ -77,7 +89,19 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
                     ET.SubElement(node_elem, "DEVICE").text = device_name
                     port_elem = ET.SubElement(node_elem, "PORT")
                     ET.SubElement(port_elem, "NAME").text = port_name
-                    ET.SubElement(port_elem, "TYPE").text = ""
+
+                    # 查找端口类型：如果对应设备的端口存在type且type不为空，则使用该值
+                    port_type = ""
+                    if device_name in device_map:
+                        device = device_map[device_name]
+                        if device.portlist:
+                            # 在portlist中查找匹配的端口
+                            for port_info in device.portlist:
+                                if port_info.name == port_name and port_info.type:
+                                    port_type = port_info.type
+                                    break
+
+                    ET.SubElement(port_elem, "TYPE").text = port_type
                     ET.SubElement(port_elem, "IPAddr").text = ""
                     ET.SubElement(port_elem, "IPv6Addr").text = ""
                     ET.SubElement(port_elem, "SLOT_TYPE").text = ""
