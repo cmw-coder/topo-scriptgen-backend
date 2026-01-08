@@ -315,9 +315,62 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
             logger.error(f"复制文件到 AIGC 目标目录失败: {str(e)}")
             raise
 
+    def _merge_device_list(self, existing_devices: List[Dict], new_devices: List[Device]) -> List[Dict]:
+        """
+        合并设备列表，设备列表以新的为准（个数和设备），只保留同名设备的旧属性
+
+        Args:
+            existing_devices: 现有的设备列表（字典格式）
+            new_devices: 新的设备列表（Device对象列表）
+
+        Returns:
+            合并后的设备列表（字典格式）
+        """
+        # 创建现有设备的映射表（按设备名称索引）
+        existing_device_map = {}
+        for device in existing_devices:
+            device_name = device.get("name")
+            if device_name:
+                existing_device_map[device_name] = device
+
+        # 处理新设备列表 - 完全以新设备列表为准
+        merged_device_list = []
+        for new_device in new_devices:
+            device_name = new_device.name
+
+            # 转换新设备为字典格式
+            new_device_dict = {
+                "name": new_device.name,
+                "location": new_device.location
+            }
+
+            # 添加可选字段
+            if new_device.text:
+                new_device_dict["text"] = new_device.text
+
+            if new_device.portlist:
+                new_device_dict["portlist"] = [
+                    {"name": port.name, "type": port.type}
+                    for port in new_device.portlist
+                ]
+
+            # 如果同名设备已存在，只保留新设备中不存在的旧属性
+            if device_name in existing_device_map:
+                existing_device = existing_device_map[device_name]
+                # 只保留新设备中没有的旧属性
+                for key, value in existing_device.items():
+                    if key not in new_device_dict:
+                        new_device_dict[key] = value
+                # 注意：如果新设备中有某个字段的值，会完全覆盖旧值
+
+            merged_device_list.append(new_device_dict)
+
+        return merged_device_list
+
     def save_device_list_to_aigc_json(self, network: Network) -> None:
         """
         将设备列表保存到 .aigc_tool/aigc.json 文件中
+        如果设备已存在，保留其现有属性（如host、port、title等），新增或覆盖新字段
 
         Args:
             network: 包含设备列表的网络拓扑对象
@@ -331,46 +384,43 @@ AI_FingerPrint_UUID: 20251225-LWJLVNvB
             # 确保目录存在
             aigc_tool_dir.mkdir(parents=True, exist_ok=True)
 
-            # 转换设备列表为字典格式
-            device_list_data = []
-            for device in network.device_list:
-                device_dict = {
-                    "name": device.name,
-                    "location": device.location
-                }
-
-                # 添加可选字段
-                if device.text:
-                    device_dict["text"] = device.text
-
-                if device.portlist:
-                    device_dict["portlist"] = [
-                        {"name": port.name, "type": port.type}
-                        for port in device.portlist
-                    ]
-
-                device_list_data.append(device_dict)
-
             # 读取现有的 aigc.json（如果存在）
             existing_data = {}
+            existing_device_list = []
             if aigc_json_path.exists():
                 try:
                     with open(aigc_json_path, 'r', encoding='utf-8') as f:
                         existing_data = json.load(f)
+                        existing_device_list = existing_data.get("device_list", [])
                 except Exception as e:
                     logger.warning(f"读取现有 aigc.json 失败: {str(e)}，将创建新文件")
 
-            # 更新设备列表
-            existing_data["device_list"] = device_list_data
+            # 合并设备列表
+            merged_device_list = self._merge_device_list(existing_device_list, network.device_list)
+
+            # 转换link_list为字典格式
+            link_list_data = []
+            for link in network.link_list:
+                link_dict = {
+                    "start_device": link.start_device,
+                    "start_port": link.start_port,
+                    "end_device": link.end_device,
+                    "end_port": link.end_port
+                }
+                link_list_data.append(link_dict)
+
+            # 更新数据
+            existing_data["device_list"] = merged_device_list
+            existing_data["link_list"] = link_list_data
 
             # 写入文件
             with open(aigc_json_path, 'w', encoding='utf-8') as f:
                 json.dump(existing_data, f, ensure_ascii=False, indent=2)
 
-            logger.info(f"成功保存设备列表到 aigc.json: {aigc_json_path}")
+            logger.info(f"成功保存设备列表和链路列表到 aigc.json: {aigc_json_path}")
 
         except Exception as e:
-            logger.error(f"保存设备列表到 aigc.json 失败: {str(e)}")
+            logger.error(f"保存设备列表和链路列表到 aigc.json 失败: {str(e)}")
             # 不抛出异常，避免影响主流程
 
 # 创建topo服务实例

@@ -288,7 +288,7 @@ async def post_topox(request: TopoxRequest) -> JSONResponse:
 
 @router.get("/api/v1/physical-devices")
 async def get_physical_devices() -> JSONResponse:
-    """获取带设备属性的拓扑信息，始终返回拓扑结构，并根据部署状态附加部署信息"""
+    """获取带设备属性的拓扑信息，从 aigc.json 读取 device_list 和 link_list，并根据部署状态附加部署信息"""
     try:
         logger.info("GET /api/v1/physical-devices received")
 
@@ -300,52 +300,30 @@ async def get_physical_devices() -> JSONResponse:
 
         logger.info(f"当前部署状态: {deploy_status}")
 
-        # 第一步：始终读取并返回拓扑结构
-        topox_path = path_manager.get_topox_dir() / "default.topox"
-        if topox_path.exists():
+        # 第一步：从 aigc.json 读取 device_list 和 link_list
+        work_dir = path_manager.get_project_root()
+        aigc_json_path = work_dir / ".aigc_tool" / "aigc.json"
+
+        network = {"device_list": [], "link_list": []}
+
+        if aigc_json_path.exists():
             try:
-                data = topox_path.read_text(encoding="utf-8")
-                network = parse_topox(data)
-            except OSError:
-                logger.exception("Failed to read %s", topox_path)
-                network = {"device_list": [], "link_list": []}
-            except ET.ParseError:
-                logger.exception("Failed to parse topox XML from %s", topox_path)
-                network = {"device_list": [], "link_list": []}
+                with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                    aigc_config = json.load(f)
+                    network["device_list"] = aigc_config.get("device_list", [])
+                    network["link_list"] = aigc_config.get("link_list", [])
+                logger.info(f"从 aigc.json 读取到 {len(network['device_list'])} 个设备和 {len(network['link_list'])} 条链路")
             except Exception as e:
-                logger.exception("Unexpected error reading topox file: %s", str(e))
-                network = {"device_list": [], "link_list": []}
+                logger.warning(f"读取 aigc.json 失败: {str(e)}，返回空数据")
         else:
-            logger.info("%s not found; returning empty data", topox_path)
-            network = {"device_list": [], "link_list": []}
+            logger.info(f"aigc.json 不存在: {aigc_json_path}")
 
         # 第二步：根据部署状态确定响应消息和是否添加设备连接信息
         response_status = "ok"
         response_message = "获取成功"
 
         if deploy_status == "deployed" and device_list:
-            # 部署成功 - 添加设备连接信息（包括 title、text 和 portlist）
-            device_attrs_map = {}
-            for device_info in device_list:
-                device_name = device_info.get("name")
-                if device_name:
-                    device_attrs_map[device_name] = {
-                        "host": device_info.get("host"),
-                        "port": device_info.get("port"),
-                        "type": device_info.get("type"),
-                        "executorip": device_info.get("executorip"),
-                        "userip": device_info.get("userip"),
-                        "title": device_info.get("title", device_name),  # 添加 title 属性，默认使用设备名
-                        "text": device_info.get("text"),  # 添加 text 属性
-                        "portlist": device_info.get("portlist")  # 添加 portlist 属性
-                    }
-
-            # 为设备列表中的每个设备添加属性
-            for device in network["device_list"]:
-                device_name = device["name"]
-                if device_name in device_attrs_map:
-                    device.update(device_attrs_map[device_name])
-
+            # 已部署
             response_status = "ok"
             response_message = "部署成功"
 
