@@ -216,7 +216,7 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
                 for port in ports_mapping:
                     if not isinstance(port, dict):
                         continue
-                    port_num = port.get("port_number")
+                    port_num = port.get("adapter_number")
                     if port_num is None:
                         continue
                     iface = port.get("interface") or port.get("name") or ""
@@ -241,8 +241,8 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
         start_device = node_id_to_name.get(start_node_id, "")
         end_device = node_id_to_name.get(end_node_id, "")
 
-        start_port_number = start_node.get("port_number")
-        end_port_number = end_node.get("port_number")
+        start_port_number = start_node.get("adapter_number")
+        end_port_number = end_node.get("adapter_number")
 
         start_port = node_id_to_portmap.get(start_node_id, {}).get(
             str(start_port_number), str(start_port_number or "")
@@ -270,6 +270,24 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
         topox_path.parent.mkdir(parents=True, exist_ok=True)
         topox_path.write_text(topox_xml, encoding="utf-8")
         logger.info("Wrote topox to %s", topox_path)
+
+        # 按照调用 topox 的逻辑，解析生成的 default.topox 并创建 aigc.json
+        try:
+            # 解析 topox 文件为 Network 对象
+            parsed_network = topo_service.parse_topox_xml(topox_xml)
+            logger.info(
+                "Parsed topox: %d devices, %d links",
+                len(parsed_network.device_list),
+                len(parsed_network.link_list),
+            )
+
+            # 保存设备列表和链路列表到 aigc.json
+            topo_service.save_device_list_to_aigc_json(parsed_network)
+            logger.info("Successfully saved device_list and link_list to aigc.json")
+        except Exception as parse_error:
+            # 解析失败不影响主流程，只记录错误
+            logger.exception("Failed to parse topox and save to aigc.json: %s", parse_error)
+
         return JSONResponse(
             content={"status": "ok", "data": topox_xml}, status_code=200
         )
