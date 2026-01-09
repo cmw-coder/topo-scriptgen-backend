@@ -164,6 +164,10 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
             status_code=502,
         )
 
+    #打印nodes_data, links_data
+    logger.info("GNS3 nodes data: %s", json.dumps(nodes_data, ensure_ascii=False))
+    logger.info("GNS3 links data: %s", json.dumps(links_data, ensure_ascii=False))
+
     if not isinstance(nodes_data, list):
         nodes_data = []
     if not isinstance(links_data, list):
