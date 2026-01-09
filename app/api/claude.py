@@ -934,8 +934,6 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         logger.info(f"Task {task_id}: 测试脚本生成完成，共处理 {message_count} 条消息")
         write_task_log(task_id, f"✓ 测试脚本生成完成 (处理了 {message_count} 条消息)")
 
-        # 拷贝生成的测试脚本（简化版，与前面类似）
-        # ... (省略具体实现，与原代码类似)
 
         # ========== 阶段3: 调用 ITC run 接口执行脚本 ==========
         logger.info(f"Task {task_id}: 开始调用 ITC run 接口")
@@ -1057,7 +1055,7 @@ async def get_task_log(task_id: str):
         with open(log_file, 'r', encoding='utf-8') as f:
             log_content = f.read()
 
-        logger.info(f"读取任务日志: task_id={task_id}, 日志行数={len(log_content.splitlines())}")
+        #logger.info(f"读取任务日志: task_id={task_id}, 日志行数={len(log_content.splitlines())}")
 
         return BaseResponse(
             status="ok",

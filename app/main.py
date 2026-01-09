@@ -56,11 +56,85 @@ def _cleanup_logs_directory(logs_dir: Path) -> None:
         print(f"[ERROR] 清理日志目录时出错: {e}")
 
 
+def _cleanup_and_init_aigc_tool_directory() -> None:
+    """清理并初始化 aigc_tool 目录
+
+    目标目录：/opt/coder/statistics/build/aigc_tool/{username}/
+    1. 删除目录下所有 .py 脚本文件
+    2. 如果不存在 __init__.py 文件则创建
+    3. 设置 __init__.py 文件权限为其他用户可读可写 (o+rw)
+    """
+    import os
+    import getpass
+    import stat
+
+    try:
+        username = getpass.getuser()
+        target_dir = Path(f"/opt/coder/statistics/build/aigc_tool/{username}")
+
+        # 如果目录不存在，创建目录
+        if not target_dir.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[INIT] 已创建 aigc_tool 目录: {target_dir}")
+
+        # 1. 删除目录下所有 .py 脚本文件（保留 __init__.py）
+        deleted_count = 0
+        for file_path in target_dir.iterdir():
+            if file_path.is_file() and file_path.suffix == '.py':
+                # 跳过 __init__.py 文件
+                if file_path.name == '__init__.py':
+                    continue
+
+                try:
+                    file_path.unlink()
+                    deleted_count += 1
+                    print(f"[CLEANUP] 已删除 Python 脚本: {file_path.name}")
+                except Exception as e:
+                    print(f"[WARNING] 删除 Python 脚本失败 {file_path.name}: {e}")
+
+        if deleted_count > 0:
+            print(f"[CLEANUP] 已清理 {deleted_count} 个 Python 脚本文件")
+        else:
+            print("[CLEANUP] aigc_tool 目录中没有需要清理的 Python 脚本")
+
+        # 2. 检查并创建 __init__.py 文件
+        init_file = target_dir / '__init__.py'
+        if not init_file.exists():
+            init_file.write_text('# -*- coding: utf-8 -*-\n')
+            print(f"[INIT] 已创建 __init__.py 文件: {init_file}")
+        else:
+            print(f"[CHECK] __init__.py 文件已存在: {init_file}")
+
+        # 3. 设置 __init__.py 文件权限为其他用户可读可写 (o+rw)
+        # 权限: 644 (rw-r--r--) -> 666 (rw-rw-rw-) 或使用 o+rw
+        try:
+            # 获取当前权限
+            current_mode = init_file.stat().st_mode
+
+            # 设置其他用户可读可写: o+rw
+            # 使用符号权限: stat.S_IROTH | stat.S_IWOTH
+            new_mode = current_mode | stat.S_IROTH | stat.S_IWOTH
+            os.chmod(init_file, new_mode)
+
+            # 验证新权限
+            new_mode_stat = init_file.stat().st_mode
+            is_readable_by_others = bool(new_mode_stat & stat.S_IROTH)
+            is_writable_by_others = bool(new_mode_stat & stat.S_IWOTH)
+
+            print(f"[PERM] 已设置 __init__.py 权限: 其他用户可读={is_readable_by_others}, 可写={is_writable_by_others}")
+
+        except PermissionError as e:
+            print(f"[WARNING] 权限不足，无法设置 __init__.py 文件权限: {e}")
+        except Exception as e:
+            print(f"[WARNING] 设置 __init__.py 文件权限时出错: {e}")
+
+    except Exception as e:
+        print(f"[ERROR] 清理并初始化 aigc_tool 目录时出错: {e}")
+
+
 # 配置日志
 def setup_logging():
-    """设置日志配置
-AI_FingerPrint_UUID: 20251224-mO3vjOth
-"""
+    """设置日志配置"""
     # 创建日志目录
     logs_dir = path_manager.get_logs_dir()
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +171,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"工作目录: {path_manager.get_project_root()}")
     logger.info(f"日志目录: {path_manager.get_logs_dir()}")
     logger.info(f"Topox目录: {path_manager.get_topox_dir()}")
+    logger.info("=" * 50)
+
+    # 清理并初始化 aigc_tool 目录
+    logger.info("清理并初始化 aigc_tool 目录...")
+    _cleanup_and_init_aigc_tool_directory()
+    logger.info("aigc_tool 目录初始化完成")
     logger.info("=" * 50)
 
     # 检查并初始化部署状态
