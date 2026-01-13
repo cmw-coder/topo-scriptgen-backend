@@ -313,23 +313,24 @@ class LOGPROCESS:
                         check_info["expect"] = expect_info_list
             check_info["exec_res"] = check_log["Result"]
         elif isinstance(check_log, list):
+            first_check_dict = check_log[0]
             last_check_dict = check_log[-1]
-            for key in last_check_dict:
+            for key in first_check_dict:
                 if "send" in key and is_first == 0:
                     is_first = 1
-                    check_send_dict = last_check_dict[key]
+                    check_send_dict = first_check_dict[key]
                     log_info = self.base_log_info_get(check_send_dict)
                     check_info["flag"] = "check"
                     check_info.update(log_info)
                 if "Parameter" in key:
                     print("新版本日志")
                     is_parameter_exist = 1
-                    check_command_info = last_check_dict[key]
+                    check_command_info = first_check_dict[key]
                     expect_info_list = self.get_expect_string_new(check_command_info)
                     check_info["expect"] = expect_info_list
                 elif "CheckCommand" in key and 0 == is_parameter_exist:
                     print("旧版本日志")
-                    check_exec_info = last_check_dict[key]
+                    check_exec_info = first_check_dict[key]
                     if isinstance(check_exec_info, dict):
                         check_res = check_exec_info["CheckResult"]
                         expect_info_list = self.get_expect_string(check_res)
@@ -441,13 +442,12 @@ class LOGPROCESS:
         if isinstance(stepLists, dict):
             item = stepLists
             if isinstance(item, dict):
-                if "Title" in item:
-                    action = item["Title"]
-                    if "METHOD" in action and "Parameter" in item:
-                        send_info = self.send_info_get(item)
+                for key, value in item.items():
+                    if "send" in key:
+                        send_info = self.send_info_get(value)
                         send_info["func"] = "teardown"
                         result.append(send_info)
-                    elif "CheckCommand" in item:
+                    elif "CheckCommand" in key:
                         check_log = item["CheckCommand"]
                         check_info = self.check_command_info_get(check_log)
                         check_info["func"] = "teardown"
@@ -455,13 +455,12 @@ class LOGPROCESS:
         else:
             for item in stepLists:
                 if isinstance(item, dict):
-                    if "Title" in item:
-                        action = item["Title"]
-                        if "METHOD" in action and "Parameter" in item:
-                            send_info = self.send_info_get(item)
+                    for key, value in item.items():
+                        if "send" in key:
+                            send_info = self.send_info_get(value)
                             send_info["func"] = "teardown"
                             result.append(send_info)
-                        elif "CheckCommand" in item:
+                        elif "CheckCommand" in key:
                             check_log = item["CheckCommand"]
                             check_info = self.check_command_info_get(check_log)
                             check_info["func"] = "teardown"
@@ -487,14 +486,13 @@ class LOGPROCESS:
                         error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
                     if isinstance(single_stepLists, dict):
                         item = single_stepLists
-                        if "Title" in item:
-                            action = item["Title"]
-                            if "METHOD" in action and "Parameter" in item:
-                                send_info = self.send_info_get(item)
+                        for key, value in item.items():
+                            if "send" in key:
+                                send_info = self.send_info_get(value)
                                 send_info["func"] = step_func
                                 send_info["step_seq"] = step_num
                                 result.append(send_info)
-                            elif "CheckCommand" in item:
+                            elif "CheckCommand" in key:
                                 check_log = item["CheckCommand"]
                                 check_info = self.check_command_info_get(check_log)
                                 check_info["func"] = step_func
@@ -502,14 +500,13 @@ class LOGPROCESS:
                                 result.append(check_info)
                     else:
                         for item in single_stepLists:
-                            if "Title" in item:
-                                action = item["Title"]
-                                if "METHOD" in action and "Parameter" in item:
-                                    send_info = self.send_info_get(item)
+                            for key, value in item.items():
+                                if "send" in key:
+                                    send_info = self.send_info_get(value)
                                     send_info["func"] = step_func
                                     send_info["step_seq"] = step_num
                                     result.append(send_info)
-                                elif "CheckCommand" in item:
+                                elif "CheckCommand" in key:
                                     check_log = item["CheckCommand"]
                                     check_info = self.check_command_info_get(check_log)
                                     check_info["func"] = step_func
@@ -533,14 +530,13 @@ class LOGPROCESS:
                             error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
                         if isinstance(single_stepLists, dict):
                             item = single_stepLists
-                            if "Title" in item:
-                                action = item["Title"]
-                                if "METHOD" in action and "Parameter" in item:
-                                    send_info = self.send_info_get(item)
+                            for key, value in item.items():
+                                if "send" in key:
+                                    send_info = self.send_info_get(value)
                                     send_info["func"] = step_func
                                     send_info["step_seq"] = step_num
                                     result.append(send_info)
-                                elif "CheckCommand" in item:
+                                elif "CheckCommand" in key:
                                     check_log = item["CheckCommand"]
                                     check_info = self.check_command_info_get(check_log)
                                     check_info["func"] = step_func
@@ -548,14 +544,13 @@ class LOGPROCESS:
                                     result.append(check_info)
                         else:
                             for item in single_stepLists:
-                                if "Title" in item:
-                                    action = item["Title"]
-                                    if "METHOD" in action and "Parameter" in item:
-                                        send_info = self.send_info_get(item)
+                                for key, value in item.items():
+                                    if "send" in key:
+                                        send_info = self.send_info_get(value)
                                         send_info["func"] = step_func
                                         send_info["step_seq"] = step_num
                                         result.append(send_info)
-                                    elif "CheckCommand" in item:
+                                    elif "CheckCommand" in key:
                                         check_log = item["CheckCommand"]
                                         check_info = self.check_command_info_get(check_log)
                                         check_info["func"] = step_func
