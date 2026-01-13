@@ -66,7 +66,7 @@ class TopoService:
 
                 # 如果存在 nodetype 属性，使用 nodetype 的值，否则默认为 Simware9
                 device_nodetype = getattr(device, 'nodetype', None)
-                if device_nodetype and device_nodetype in ["CmwDevice", "TestCenter", "TestInstrument"]:
+                if device_nodetype and device_nodetype in ["CmwDevice", "TestMaster", "TestInstrument"]:
                     ET.SubElement(prop_elem, "TYPE").text = device_nodetype
                 else:
                     ET.SubElement(prop_elem, "TYPE").text = "Simware9"
