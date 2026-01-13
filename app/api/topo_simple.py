@@ -199,7 +199,8 @@ async def get_topox() -> JSONResponse:
                     if device_name:
                         device_attrs_map[device_name] = {
                             "text": device_info.get("text"),
-                            "portlist": device_info.get("portlist")
+                            "portlist": device_info.get("portlist"),
+                            "nodetype": device_info.get("nodetype")
                         }
 
                 # 为设备列表添加 text 和 portlist 属性

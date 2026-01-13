@@ -12,6 +12,7 @@ class Device(BaseModel):
     location: str = Field(description="设备位置")
     text: Optional[str] = Field(None, description="设备文本描述")
     portlist: Optional[List[PortInfo]] = Field(default_factory=list, description="端口列表")
+    nodetype: Optional[str] = Field(None, description="设备类型，可选值: CmwDevice, TestCenter, TestInstrument")
 
 class Link(BaseModel):
     """链路模型"""

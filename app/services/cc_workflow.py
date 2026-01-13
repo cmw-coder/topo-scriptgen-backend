@@ -115,7 +115,7 @@ async def stream_test_script_response(test_point: str, workspace: str = ""):
     )
 
     print("🚀 正在发送请求以触发 Skill...\n")
-    prompt = escape_all_special_chars(f"调用 skill: test_script_generate ,生成一下测试点的测试脚本：{test_point}")
+    prompt = escape_all_special_chars(f"调用 skill: test_script_generate ,生成以下测试点的测试脚本，生成的文件保存到工作区:{workspace}，测试点如下：{test_point}")
 
     # 处理转义字符
     try:

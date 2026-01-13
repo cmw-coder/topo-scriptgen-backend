@@ -63,7 +63,14 @@ class TopoService:
                 device_elem = ET.SubElement(device_list_elem, "DEVICE")
                 prop_elem = ET.SubElement(device_elem, "PROPERTY")
                 ET.SubElement(prop_elem, "NAME").text = device.name or ""
-                ET.SubElement(prop_elem, "TYPE").text = "Simware9"
+
+                # 如果存在 nodetype 属性，使用 nodetype 的值，否则默认为 Simware9
+                device_nodetype = getattr(device, 'nodetype', None)
+                if device_nodetype and device_nodetype in ["CmwDevice", "TestCenter", "TestInstrument"]:
+                    ET.SubElement(prop_elem, "TYPE").text = device_nodetype
+                else:
+                    ET.SubElement(prop_elem, "TYPE").text = "Simware9"
+
                 ET.SubElement(prop_elem, "ENABLE").text = "TRUE"
                 ET.SubElement(prop_elem, "IS_DOUBLE_MCU").text = "FALSE"
                 ET.SubElement(prop_elem, "IS_SINGLE_MCU").text = "FALSE"
@@ -380,6 +387,10 @@ class TopoService:
                     {"name": port.name, "type": port.type}
                     for port in device_portlist
                 ]
+
+            device_nodetype = getattr(new_device, 'nodetype', None)
+            if device_nodetype:
+                new_device_dict["nodetype"] = device_nodetype
 
             # 如果同名设备已存在，只保留新设备中不存在的旧属性
             if device_name in existing_device_map:
