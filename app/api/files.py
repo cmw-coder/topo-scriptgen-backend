@@ -247,7 +247,7 @@ async def extract_executed_command_lines(request: FilePathRequest):
         # 从 topox 文件获取设备列表
         device_list = await _get_device_list_from_topox()
         #过滤掉测试仪 TestInstrument 和 TestMaster 设备
-        device_list = [device for device in device_list if device.get("type") not in ["TestInstrument", "TestMaster"]]
+        device_list = [device for device in device_list if device.get("nodetype") not in ["TestInstrument", "TestMaster"]]
         # 将 IP 地址转换为域名
         device_list = settings.convert_ip_to_domain(device_list)
 
