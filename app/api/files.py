@@ -309,6 +309,7 @@ async def _get_device_list_from_topox():
                         "host": device_info.get("host"),
                         "port": device_info.get("port"),
                         "type": device_info.get("type"),
+                        "nodetype": device_info.get("nodetype"),
                         "executorip": device_info.get("executorip"),
                         "userip": device_info.get("userip"),
                         "title": device_info.get("title")  # 添加 title，从 deploy 返回的值获取
