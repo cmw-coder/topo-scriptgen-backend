@@ -116,13 +116,88 @@ class LOGPROCESS:
         right = title_string.find(')', left)  # 从left位置开始找右括号
 
         if left != -1 and right != -1:
-            result = title_string[left+1:right]
+            result = title_string[:left]
             return result
 
         return None
 
-    def get_expect_string_new(self, check_command_info):
+    def get_first_param_only(self, input_str):
+        """
+        从包含"函数入参:"的字符串中提取第一个参数
+        
+        参数:
+            input_str: 输入字符串
+        
+        返回:
+            第一个参数的字符串（去除引号）
+        """
+        # 查找"函数入参:"关键词
+        keyword = "函数入参："
+        
+        if keyword not in input_str:
+            return ""
+        
+        # 获取关键词后面的内容
+        params_part = input_str.split(keyword, 1)[1].strip()
+        # 找到第一个括号对中的内容
+        start = params_part.find('(')
+        end = params_part.find(')')
+        
+        if start == -1 or end == -1:
+            return ""
+        
+        # 提取括号内的参数
+        params_content = params_part[start + 1:end]
+        
+        # 按逗号分割参数，但要注意保护字符串内部的逗号
+        params_list = []
+        current_param = ""
+        in_quotes = False
+        quote_char = None
+        
+        for char in params_content:
+            if char in ["'", '"']:
+                if not in_quotes:
+                    in_quotes = True
+                    quote_char = char
+                elif char == quote_char:
+                    in_quotes = False
+                current_param += char
+            elif char == ',' and not in_quotes:
+                params_list.append(current_param.strip())
+                current_param = ""
+            else:
+                current_param += char
+        
+        # 添加最后一个参数
+        if current_param:
+            params_list.append(current_param.strip())
+        
+        # 获取第一个参数并去除引号
+        if params_list:
+            first_param = params_list[0]
 
+            return first_param
+
+        return ""
+
+    def get_atf_check_parameter(self, check_value):
+        res = ""
+        if isinstance(check_value, dict):
+            if "Parameter" in check_value:
+                para = check_value["Parameter"]
+                res = self.get_first_param_only(str(para))
+                return res
+        elif isinstance(check_value, list):
+            if check_value:
+                first_check = check_value[0]
+                if "Parameter" in first_check:
+                    para = first_check["Parameter"]
+                    res = self.get_first_param_only(str(para))
+                    return res
+        return res
+
+    def get_expect_string_new(self, check_command_info):
         results = []
 
         cmd_start = check_command_info.find("{'cmd'")
@@ -241,6 +316,53 @@ class LOGPROCESS:
                     result_lines.append(command_exec_res)
         return result_lines
 
+    def find_keys_recursive(self, log_data):
+        commands_info = []
+        tail_error_value = {}
+        atf_check_type = ["equal","gt","greater","lt","less","gte","greater_equal","lte","less_equal","neq","is_in","not_in"]
+        
+        if isinstance(log_data, list):
+            for item in log_data:
+                lower_commands_info, lower_tail_error_info = self.find_keys_recursive(item)
+                if lower_commands_info:
+                    commands_info.extend(lower_commands_info)
+                if lower_tail_error_info:
+                    # 合并错误信息而不是覆盖
+                    tail_error_value.update(lower_tail_error_info)
+            return commands_info, tail_error_value
+        
+        if not isinstance(log_data, dict):
+            return commands_info, tail_error_value
+        
+        for key, value in log_data.items():
+            tmp_dict = {}
+            if "CheckCommand" in key:
+                tmp_dict["CheckCommand"] = value
+                commands_info.append(tmp_dict)
+            elif "send" in key:
+                tmp_dict["send"] = value
+                commands_info.append(tmp_dict)
+            elif key in atf_check_type:
+                tmp_dict[key] = value
+                commands_info.append(tmp_dict)
+            elif "all_cmds_response" in key:
+                tmp_dict["send"] = log_data
+                commands_info.append(tmp_dict)
+            elif "Error_occurred" in key:
+                # 如果是错误信息，直接赋值或合并
+                if isinstance(value, dict):
+                    tail_error_value.update(value)
+                else:
+                    tail_error_value = value
+            else:
+                lower_commands_info, lower_tail_error_info = self.find_keys_recursive(value)
+                if lower_commands_info:
+                    commands_info.extend(lower_commands_info)
+                if lower_tail_error_info:
+                    tail_error_value.update(lower_tail_error_info)
+        
+        return commands_info, tail_error_value
+
     def base_log_info_get(self,log_dict):
         log_info = {}
         if "Parameter" in log_dict:
@@ -340,9 +462,10 @@ class LOGPROCESS:
 
         return check_info
 
-    def conftest_command_info_get(self, info_dict, flag, teardown_send_flag = 0):
+    def conftest_command_info_get(self, info_dict, flag):
         result = []
-        if "setup" == flag or 0 == teardown_send_flag:
+        atf_check_type = ["equal","gt","greater","lt","less","gte","greater_equal","lte","less_equal","neq","is_in","not_in"]
+        if "setup" == flag:
             if isinstance(info_dict, dict):
                 for key, value in info_dict.items():
                     if "send" in key:
@@ -355,16 +478,27 @@ class LOGPROCESS:
                         check_info = self.check_command_info_get(check_log)
                         check_info["func"] = flag
                         result.append(check_info)
-                else:
-                    if "all_cmds_response" in info_dict:
-                        check_info = self.send_info_get(info_dict)
-                        #print(check_info)
+                    elif key in atf_check_type:
+                        check_info = self.get_atf_check_info(value, key)
+                        check_info["func"] = step_func
+                        result.append(check_info)
+        if "teardown" == flag:
+            if isinstance(info_dict, dict):
+                for key, value in info_dict.items():
+                    if "send" in key:
+                        send_dict = value
+                        send_info = self.send_info_get(send_dict)
+                        send_info["func"] = flag
+                        result.append(send_info)
+                    elif "CheckCommand" in key:
+                        check_log = value
+                        check_info = self.check_command_info_get(check_log)
                         check_info["func"] = flag
                         result.append(check_info)
-        if "teardown" == flag and 1 == teardown_send_flag:
-            send_info = self.send_info_get(info_dict)
-            send_info["func"] = flag
-            result.append(send_info)
+                    elif key in atf_check_type:
+                        check_info = self.get_atf_check_info(value, key)
+                        check_info["func"] = step_func
+                        result.append(check_info)
         return result
 
     def command_error_info_process(self,erro_info,func_name):
@@ -394,77 +528,131 @@ class LOGPROCESS:
         func_info["fail_type"] = "func_level"
         return func_info
 
+    def get_atf_check_info(self, value, check_type):
+        check_info = {}
+        check_info["lay_list"] = []
+        check_info["device_name"] = None
+        atf_check_info = self.get_atf_check_parameter(value)
+        check_info["send_commands"] = []
+        check_info["exec_info"] = atf_check_info
+        check_info["flag"] = check_type
+        check_info["expect"] = []
+        check_info["exec_res"] = "PASS"
+        return check_info
+
+    def step_command_info_extract(self,commands_info,step_func,step_num):
+        if not commands_info:
+            return []
+        commands_info_list = []
+        atf_check_type = ["equal","gt","greater","lt","less","gte","greater_equal","lte","less_equal","neq","is_in","not_in"]
+        for key, value in commands_info.items():
+            if "send" in key:
+                send_info = self.send_info_get(value)
+                send_info["func"] = step_func
+                send_info["step_seq"] = step_num
+                commands_info_list.append(send_info)
+            elif "CheckCommand" in key:
+                check_info = self.check_command_info_get(value)
+                check_info["func"] = step_func
+                check_info["step_seq"] = step_num
+                commands_info_list.append(check_info)
+            elif key in atf_check_type:
+                check_info = self.get_atf_check_info(value, key)
+                check_info["func"] = step_func
+                check_info["step_seq"] = step_num
+                commands_info_list.append(check_info)
+        return commands_info_list
+
     def get_setup_info(self, stepLists):
         result = []
-        command_num = 0
+        atf_check_type = ["equal","gt","greater","lt","less","gte","greater_equal","lte","less_equal","neq","is_in","not_in"]
         if not stepLists:
             return None
         if isinstance(stepLists, dict):
             item = stepLists
             if isinstance(item, dict):
-                for key in item:
-                    if "send" in key:
-                        send_dict = item[key]
-                        send_info = self.send_info_get(send_dict)
-                        send_info["func"] = "setup"
-                        result.append(send_info)
-                    elif "CheckCommand" in key:
-                        check_log = item[key]
-                        check_info = self.check_command_info_get(check_log)
-                        check_info["func"] = "setup"
-                        result.append(check_info)
-                else:
-                    if "all_cmds_response" in  item:
-                        send_dict = item
-                        send_info = self.send_info_get(send_dict)
-                        send_info["func"] = "setup"
-                        result.append(send_info)
+                commands_info, tail_error_value = self.find_keys_recursive(item)
+                if commands_info:
+                    for command in commands_info:
+                        for key, value in command.items():
+                            if "send" in key:
+                                send_info = self.send_info_get(value)
+                                send_info["func"] = "setup"
+                                result.append(send_info)
+                            elif "CheckCommand" in key:
+                                check_info = self.check_command_info_get(value)
+                                check_info["func"] = "setup"
+                                result.append(check_info)
+                            elif key in atf_check_type:
+                                check_info = self.get_atf_check_info(value, key)
+                                check_info["func"] = "setup"
+                                result.append(check_info)
+
         else:
             for item in stepLists:
                 if isinstance(item, dict):
-                    for key in item:
-                        if "send" in key:
-                            send_dict = item[key]
-                            send_info = self.send_info_get(send_dict)
-                            send_info["func"] = "setup"
-                            result.append(send_info)
-                        elif "CheckCommand" in key:
-                            check_log = item[key]
-                            check_info = self.check_command_info_get(check_log)
-                            check_info["func"] = "setup"
-                            result.append(check_info)
+                    commands_info, tail_error_value = self.find_keys_recursive(item)
+                    if commands_info:
+                        for command in commands_info:
+                            for key, value in command.items():
+                                if "send" in key:
+                                    send_info = self.send_info_get(value)
+                                    send_info["func"] = "setup"
+                                    result.append(send_info)
+                                elif "CheckCommand" in key:
+                                    check_info = self.check_command_info_get(value)
+                                    check_info["func"] = "setup"
+                                    result.append(check_info)
+                                elif key in atf_check_type:
+                                    check_info = self.get_atf_check_info(value, key)
+                                    check_info["func"] = "setup"
+                                    result.append(check_info)
         return result
 
     def get_teardown_info(self, stepLists):
         result = []
+        atf_check_type = ["equal","gt","greater","lt","less","gte","greater_equal","lte","less_equal","neq","is_in","not_in"]
         if not stepLists:
             return None
         if isinstance(stepLists, dict):
             item = stepLists
             if isinstance(item, dict):
-                for key, value in item.items():
-                    if "send" in key:
-                        send_info = self.send_info_get(value)
-                        send_info["func"] = "teardown"
-                        result.append(send_info)
-                    elif "CheckCommand" in key:
-                        check_log = item["CheckCommand"]
-                        check_info = self.check_command_info_get(check_log)
-                        check_info["func"] = "teardown"
-                        result.append(check_info)
+                commands_info, tail_error_value = self.find_keys_recursive(item)
+                if commands_info:
+                    for command in commands_info:
+                        for key, value in command.items():
+                            if "send" in key:
+                                send_info = self.send_info_get(value)
+                                send_info["func"] = "teardown"
+                                result.append(send_info)
+                            elif "CheckCommand" in key:
+                                check_info = self.check_command_info_get(value)
+                                check_info["func"] = "teardown"
+                                result.append(check_info)
+                            elif key in atf_check_type:
+                                check_info = self.get_atf_check_info(value, key)
+                                check_info["func"] = "teardown"
+                                result.append(check_info)
+
         else:
             for item in stepLists:
                 if isinstance(item, dict):
-                    for key, value in item.items():
-                        if "send" in key:
-                            send_info = self.send_info_get(value)
-                            send_info["func"] = "teardown"
-                            result.append(send_info)
-                        elif "CheckCommand" in key:
-                            check_log = item["CheckCommand"]
-                            check_info = self.check_command_info_get(check_log)
-                            check_info["func"] = "teardown"
-                            result.append(check_info)
+                    commands_info, tail_error_value = self.find_keys_recursive(item)
+                    if commands_info:
+                        for command in commands_info:
+                            for key, value in command.items():
+                                if "send" in key:
+                                    send_info = self.send_info_get(value)
+                                    send_info["func"] = "teardown"
+                                    result.append(send_info)
+                                elif "CheckCommand" in key:
+                                    check_info = self.check_command_info_get(value)
+                                    check_info["func"] = "teardown"
+                                    result.append(check_info)
+                                elif key in atf_check_type:
+                                    check_info = self.get_atf_check_info(value, key)
+                                    check_info["func"] = "teardown"
+                                    result.append(check_info)
         return result
 
     def get_step_info(self,steps):
@@ -481,39 +669,17 @@ class LOGPROCESS:
             else:
                 error_info = {}
                 if "stepLists" in step:
-                    single_stepLists = step["stepLists"]
+                    commands_info, tail_error_value = self.find_keys_recursive(step)
                     if "Error_occurred" in step:
-                        error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
-                    if isinstance(single_stepLists, dict):
-                        item = single_stepLists
-                        for key, value in item.items():
-                            if "send" in key:
-                                send_info = self.send_info_get(value)
-                                send_info["func"] = step_func
-                                send_info["step_seq"] = step_num
-                                result.append(send_info)
-                            elif "CheckCommand" in key:
-                                check_log = item["CheckCommand"]
-                                check_info = self.check_command_info_get(check_log)
-                                check_info["func"] = step_func
-                                check_info["step_seq"] = step_num
-                                result.append(check_info)
-                    else:
-                        for item in single_stepLists:
-                            for key, value in item.items():
-                                if "send" in key:
-                                    send_info = self.send_info_get(value)
-                                    send_info["func"] = step_func
-                                    send_info["step_seq"] = step_num
-                                    result.append(send_info)
-                                elif "CheckCommand" in key:
-                                    check_log = item["CheckCommand"]
-                                    check_info = self.check_command_info_get(check_log)
-                                    check_info["func"] = step_func
-                                    check_info["step_seq"] = step_num
-                                    result.append(check_info)
-                    if error_info:
-                        result.append(error_info)
+                        error_info = self.step_command_error_info_process(tail_error_value,step_func,step_num)
+
+                    if commands_info:
+                        for item in commands_info:
+                            commands_info_list = self.step_command_info_extract(item,step_func,step_num)
+                            if commands_info_list:
+                                result.extend(commands_info_list)
+                            if error_info:
+                                result.append(error_info)
         else:
             for step in steps:
                 step_num = step_num + 1
@@ -525,39 +691,17 @@ class LOGPROCESS:
                 else:
                     error_info = {}
                     if "stepLists" in step:
-                        single_stepLists = step["stepLists"]
+                        commands_info, tail_error_value = self.find_keys_recursive(step)
                         if "Error_occurred" in step:
-                            error_info = self.step_command_error_info_process(step["Error_occurred"],step_func,step_num)
-                        if isinstance(single_stepLists, dict):
-                            item = single_stepLists
-                            for key, value in item.items():
-                                if "send" in key:
-                                    send_info = self.send_info_get(value)
-                                    send_info["func"] = step_func
-                                    send_info["step_seq"] = step_num
-                                    result.append(send_info)
-                                elif "CheckCommand" in key:
-                                    check_log = item["CheckCommand"]
-                                    check_info = self.check_command_info_get(check_log)
-                                    check_info["func"] = step_func
-                                    check_info["step_seq"] = step_num
-                                    result.append(check_info)
-                        else:
-                            for item in single_stepLists:
-                                for key, value in item.items():
-                                    if "send" in key:
-                                        send_info = self.send_info_get(value)
-                                        send_info["func"] = step_func
-                                        send_info["step_seq"] = step_num
-                                        result.append(send_info)
-                                    elif "CheckCommand" in key:
-                                        check_log = item["CheckCommand"]
-                                        check_info = self.check_command_info_get(check_log)
-                                        check_info["func"] = step_func
-                                        check_info["step_seq"] = step_num
-                                        result.append(check_info)
-                        if error_info:
-                            result.append(error_info)
+                            error_info = self.step_command_error_info_process(tail_error_value,step_func,step_num)
+
+                        if commands_info:
+                            for item in commands_info:
+                                commands_info_list = self.step_command_info_extract(item,step_func,step_num)
+                                if commands_info_list:
+                                    result.extend(commands_info_list)
+                                if error_info:
+                                    result.append(error_info)
         return result
 
     def process_up_or_down_list(self, data_list, func):
@@ -675,12 +819,14 @@ class LOGPROCESS:
         exec_info = data['exec_info']
         exec_res = data['exec_res']
         check_expect = data['expect']
+        command_type = data['flag']
         if not commands:
             info_dict = {}
             info_dict['cmd'] = commands
             info_dict['exec_info'] = exec_info
             info_dict['exec_res'] = exec_res
             info_dict['expect'] = check_expect
+            info_dict['flag'] = command_type
             if "fail_type" in data:
                 info_dict["fail_type"] = data["fail_type"]
             res.append(info_dict)
@@ -707,6 +853,7 @@ class LOGPROCESS:
                     info_dict['cmd'] = command
                     info_dict['exec_info'] = exec_info
                     info_dict['expect'] = check_expect
+                    info_dict['flag'] = command_type
                     res.append(info_dict)
             else:
                 for command in commands:
@@ -715,17 +862,19 @@ class LOGPROCESS:
                     info_dict['exec_info'] = exec_info
                     info_dict['exec_res'] = exec_res
                     info_dict['expect'] = check_expect
+                    info_dict['flag'] = command_type
                     res.append(info_dict)
         return res
 
     def gen_command_info(self, data_list):
         res = {}
         pre_funcname = ""
-        pre_dut_name = ""
+        pre_dut_name = "void_name"
         commands = []
         single_dut_command = {}
         dut_list = []
         for item in data_list:
+            #print(item)
             if not pre_funcname:
                 pre_funcname = item["func"]
             elif pre_funcname != item["func"]:
@@ -733,13 +882,13 @@ class LOGPROCESS:
                     dut_list.append(single_dut_command)
                     single_dut_command = {}
                     res[pre_funcname] = dut_list
-                pre_dut_name = ""
+                pre_dut_name = "void_name"
                 dut_list = []
                 pre_funcname = item["func"]
             #if "device_name" not in item:
                 #print(item)
             dut_name = item["device_name"]
-            if not pre_dut_name:
+            if "void_name" == pre_dut_name:
                 pre_dut_name = dut_name
                 single_dut_command[dut_name] = []
                 commands_info = self.match_command_and_exe_info(item)
@@ -777,6 +926,7 @@ class LOGPROCESS:
             step_name = f"step_{i}"
             if step_name in total_step_dict:
                 step_res = self.gen_command_info(total_step_dict[step_name])
+                print(step_res)
                 tmp_step_dict = {}
                 tmp_step_dict[step_name] = step_res
                 #print(tmp_step_dict)
@@ -854,7 +1004,7 @@ class LOGPROCESS:
     def splice_commmand_info(self, json_data, log_info):
         splice_res = ""
         func_description = self.get_func_description(json_data)
-        #print(func_description)
+        atf_check_type = ["equal","gt","greater","lt","less","gte","greater_equal","lte","less_equal","neq","is_in","not_in"]
         if isinstance(log_info, dict):
             if "setup" in log_info:
                 splice_res = splice_res + "!!!func setup\n"
@@ -868,6 +1018,8 @@ class LOGPROCESS:
                                 if "fail_type" in dut_commond:
                                     fail_info = dut_commond["exec_info"]
                                     splice_res = splice_res + "命令执行失败: " + fail_info + "\n"
+                                elif dut_commond['flag'] in atf_check_type:
+                                    splice_res = splice_res + "(" + dut_commond['flag'] + ": " + dut_commond["exec_info"] + ")" + "\n"
                             continue
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
@@ -909,6 +1061,8 @@ class LOGPROCESS:
                                 if "fail_type" in dut_commond:
                                     fail_info = dut_commond["exec_info"]
                                     splice_res = splice_res + "命令执行失败: " + fail_info + "\n"
+                                elif dut_commond['flag'] in atf_check_type:
+                                    splice_res = splice_res + "(" + dut_commond['flag'] + ": " + dut_commond["exec_info"] + ")" + "\n"
                             continue
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
@@ -955,6 +1109,8 @@ class LOGPROCESS:
                                         if "fail_type" in dut_commond:
                                             fail_info = dut_commond["exec_info"]
                                             splice_res = splice_res + "命令执行失败: " + fail_info + "\n"
+                                        elif dut_commond['flag'] in atf_check_type:
+                                            splice_res = splice_res + "(" + dut_commond['flag'] + ": " + dut_commond["exec_info"] + ")" + "\n"
                                     continue
                                 splice_res = splice_res + f"!!device {dut_key}" + "\n"
                                 for dut_commond in dut_value:
@@ -999,6 +1155,8 @@ class LOGPROCESS:
                                 if "fail_type" in dut_commond:
                                     fail_info = dut_commond["exec_info"]
                                     splice_res = splice_res + "命令执行失败: " + fail_info + "\n"
+                                elif dut_commond['flag'] in atf_check_type:
+                                    splice_res = splice_res + "(" + dut_commond['flag'] + ": " + dut_commond["exec_info"] + ")" + "\n"
                             continue
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
@@ -1038,6 +1196,8 @@ class LOGPROCESS:
                                 if "fail_type" in dut_commond:
                                     fail_info = dut_commond["exec_info"]
                                     splice_res = splice_res + "命令执行失败: " + fail_info + "\n"
+                                elif dut_commond['flag'] in atf_check_type:
+                                    splice_res = splice_res + "(" + dut_commond['flag'] + ": " + dut_commond["exec_info"] + ")" + "\n"
                             continue
                         splice_res = splice_res + f"!!device {dut_key}" + "\n"
                         for dut_commond in dut_value:
@@ -1090,24 +1250,21 @@ class LOGPROCESS:
         tail_error_info = []
         #teardown_commands = []
         if "setup" == flag:
-            if isinstance(data, dict):
-                for key, value in data.items():
-                    if "create_interface" in key or "atf_retry" in key or "send" in key or "CheckCommand" in key:
-                        step_info = self.conftest_command_info_get(value, flag)
-                        log_commands.extend(step_info)
-                    elif "Error_occurred" in key:
-                        tail_error_info = self.command_error_info_process(value,"setup")
+            commands_info, tail_error_value = self.find_keys_recursive(data)
+            if commands_info:
+                for item in commands_info:
+                    step_info = self.conftest_command_info_get(item, flag)
+                    log_commands.extend(step_info)
+            if tail_error_value:
+                tail_error_info = self.command_error_info_process(tail_error_value,"setup")
         elif "teardown" == flag:
-            if isinstance(data, dict):
-                for key, value in data.items():
-                    if "send" in key:
-                        step_info = self.conftest_command_info_get(value, flag, 1)
-                        log_commands.extend(step_info)
-                    elif "delete_interface" in key:
-                        step_info = self.conftest_command_info_get(value, flag)
-                        log_commands.extend(step_info)
-                    elif "Error_occurred" in key:
-                        tail_error_info = self.command_error_info_process(value,"teardown")
+            commands_info, tail_error_value = self.find_keys_recursive(data)
+            if commands_info:
+                for item in commands_info:
+                    step_info = self.conftest_command_info_get(item, flag)
+                    log_commands.extend(step_info)
+            if tail_error_value:
+                tail_error_info = self.command_error_info_process(tail_error_value,"teardown")
 
         log_commands.extend(tail_error_info)
         #print(log_commands)
@@ -1157,7 +1314,7 @@ class LOGPROCESS:
 
 if __name__ == "__main__":
     # 1. 实例化类，传入日志文件路径
-    log_processor = LOGPROCESS("/home/y28677/w31815/tmps/new_script_extract/local/")  # 替换为实际的JSON文件路径
+    log_processor = LOGPROCESS("/home/h25380/wjz/tmp/script_command_extract/local/")  # 替换为实际的JSON文件路径
     
     try:
         # 2. 调用 extract_setup_content 方法提取 setup 内容
