@@ -218,6 +218,10 @@ async def extract_executed_command_lines(request: FilePathRequest):
         agent = ExtractCommandAgent(settings.get_script_command_log_path())
         log_command_mapping = agent.get_log_command_info()
 
+        # 同时更新全局静态变量，供其他接口使用
+        from app.services.script_command_extract import refresh_static_variables
+        refresh_static_variables()
+
         logger.info(f"日志解析完成，获取到 {len(log_command_mapping)} 个文件映射")
         logger.info(f"映射键列表: {list(log_command_mapping.keys())}")
 
