@@ -342,6 +342,21 @@ def create_app() -> FastAPI:
             "Public directory %s not found; static files will not be served.",
             public_dir,
         )
+    pytest_log_view_dir = Path(__file__).parent.parent / "public" / "pytest-log-view"
+    if pytest_log_view_dir.exists():
+        app.mount(
+            "/pytest-log-view",
+            StaticFiles(directory=str(pytest_log_view_dir)),
+            name="pytest-log-view"
+        )
+        logger = logging.getLogger(__name__)
+        logger.info("Serving pytest-log-view static files from %s", pytest_log_view_dir)
+    else:
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "Pytest-log-view directory %s not found; static files will not be served.",
+            pytest_log_view_dir,
+        )
 
     # SPA catch-all 路由：所有未被 API 匹配的路径返回 index.html
     # 必须放在最后，作为 fallback
@@ -356,6 +371,16 @@ def create_app() -> FastAPI:
             return FileResponse(str(index_file))
         else:
             raise HTTPException(status_code=404, detail="Frontend not built")
+
+    @app.get("/pytest-log-view", include_in_schema=False)
+    async def pytest_log_view_index():
+        """pytest-log-view 根路径，返回 index.html"""
+        index_file = pytest_log_view_dir / "index.html"
+        if index_file.exists():
+            from fastapi.responses import FileResponse
+            return FileResponse(str(index_file))
+        else:
+            raise HTTPException(status_code=404, detail="Pytest-log-view frontend not built")
 
     @app.get("/api/{full_path:path}", include_in_schema=False)
     async def api_catch_all():
