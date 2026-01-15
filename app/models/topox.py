@@ -7,6 +7,7 @@ class Device(BaseModel):
 
     name: str = Field(description="设备名称")
     location: str = Field(description="设备位置")
+    nodetype: Optional[str] = Field(None, description="设备类型")
 
 
 class Link(BaseModel):

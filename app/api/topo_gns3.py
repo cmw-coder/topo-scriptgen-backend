@@ -173,9 +173,38 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
     if not isinstance(links_data, list):
         links_data = []
 
+    # 获取模板列表，用于匹配设备类型
+    templates_url = f"{GNS3_BASE_URL}/v3/templates"
+    template_id_to_name: Dict[str, str] = {}
+    try:
+        async with httpx.AsyncClient(
+            verify=False,
+            trust_env=False,
+            timeout=httpx.Timeout(GNS3_TIMEOUT),
+        ) as client:
+            templates_resp = await client.get(templates_url, headers=auth_headers)
+        if templates_resp.status_code == 200:
+            try:
+                templates_data: List[Dict[str, Any]] = templates_resp.json()  # type: ignore[assignment]
+                if isinstance(templates_data, list):
+                    for template in templates_data:
+                        if isinstance(template, dict):
+                            template_id = str(template.get("template_id", ""))
+                            template_name = str(template.get("name", ""))
+                            if template_id and template_name:
+                                template_id_to_name[template_id] = template_name
+                logger.info(
+                    "GNS3 templates loaded: %s",
+                    json.dumps(template_id_to_name, ensure_ascii=False),
+                )
+            except ValueError:
+                logger.warning("Failed to decode templates response")
+    except httpx.HTTPError:
+        logger.warning("Failed to fetch templates from GNS3, using default device type")
+
     node_id_to_name: Dict[str, str] = {}
     node_id_to_portmap: Dict[str, Dict[str, str]] = {}
-    device_list: List[Dict[str, str]] = []
+    device_list: List[Dict[str, Any]] = []
 
     for node in nodes_data or []:
         if not isinstance(node, dict):
@@ -185,7 +214,12 @@ async def post_topox_from_gns3(request: Request) -> JSONResponse:
         x = node.get("x")
         y = node.get("y")
         location = f"{x},{y}" if x is not None and y is not None else ""
-        device_list.append({"name": name, "location": location})
+
+        # 根据 template_id 匹配模板名称作为 nodetype
+        template_id = str(node.get("template_id", ""))
+        nodetype = template_id_to_name.get(template_id, "CmwDevice")
+
+        device_list.append({"name": name, "location": location, "nodetype": nodetype})
         if node_id:
             node_id_to_name[node_id] = name
 

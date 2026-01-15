@@ -64,12 +64,12 @@ class TopoService:
                 prop_elem = ET.SubElement(device_elem, "PROPERTY")
                 ET.SubElement(prop_elem, "NAME").text = device.name or ""
 
-                # 如果存在 nodetype 属性，使用 nodetype 的值，否则默认为 Simware9
+                # 如果存在 nodetype 属性，使用 nodetype 的值，否则默认为 CmwDevice
                 device_nodetype = getattr(device, 'nodetype', None)
-                if device_nodetype and device_nodetype in ["CmwDevice", "TestMaster", "TestInstrument"]:
+                if device_nodetype:
                     ET.SubElement(prop_elem, "TYPE").text = device_nodetype
                 else:
-                    ET.SubElement(prop_elem, "TYPE").text = "Simware9"
+                    ET.SubElement(prop_elem, "TYPE").text = "CmwDevice"
 
                 ET.SubElement(prop_elem, "ENABLE").text = "TRUE"
                 ET.SubElement(prop_elem, "IS_DOUBLE_MCU").text = "FALSE"
