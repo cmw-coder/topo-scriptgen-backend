@@ -52,6 +52,9 @@ class UserContext:
                     # 跳过 log 目录
                     if 'log' in dirs:
                         dirs.remove('log')
+                    # 跳过 metrics 目录
+                    if 'metrics' in dirs:
+                        dirs.remove('metrics')
                     for dir_name in dirs:
                         dir_path = os.path.join(root, dir_name)
                         try:

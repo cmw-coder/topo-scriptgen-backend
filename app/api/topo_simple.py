@@ -259,6 +259,14 @@ async def post_topox(request: TopoxRequest) -> JSONResponse:
         # 保存设备列表到 aigc.json（包含 text 和 portlist）
         topo_service.save_device_list_to_aigc_json(request.network)
 
+        # ========== 统计：记录第一次保存topo时间 ==========
+        try:
+            from app.services.metrics_service import metrics_service
+            metrics_service.record_topo_save()
+        except Exception as metrics_error:
+            logger.warning(f"记录topo保存时间失败: {metrics_error}")
+        # ================================================
+
         logger.info(f"成功保存 topox 文件: {response.file_path}")
 
         return JSONResponse(

@@ -986,6 +986,16 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
                     # 部署成功，更新状态
                     settings.set_deploy_status("deployed")
                     settings.set_deploy_error_message(None)
+
+                    # ========== 统计：记录部署完成时间 ==========
+                    try:
+                        from app.services.metrics_service import metrics_service
+                        from datetime import datetime
+                        metrics_service.record_deploy_complete(datetime.now())
+                    except Exception as metrics_error:
+                        logger.warning(f"记录部署完成时间失败: {metrics_error}")
+                    # ===========================================
+
                     logger.info("=" * 80)
                     logger.info("后台部署任务执行成功")
                     logger.info("=" * 80)

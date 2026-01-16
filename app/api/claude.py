@@ -781,6 +781,11 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
     from app.utils.claude_message_parser import ClaudeMessageParser
     parser = ClaudeMessageParser()
 
+    # ========== 统计：获取或创建流程统计记录 ==========
+    from app.services.metrics_service import metrics_service
+    flow_id = metrics_service.get_or_create_current_flow(test_point, workspace)
+    # =================================================
+
     # 写入任务开始标识
     write_task_start_log(task_id, "自动化测试流程")
     write_task_log(task_id, f"测试点: {test_point[:100]}...")
@@ -812,7 +817,13 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
         from app.services.cc_workflow import stream_generate_conftest_response
 
+        # ========== 统计：记录生成conftest开始时间 ==========
+        from datetime import datetime
+        conftest_start_time = datetime.now()
+        # ================================================
+
         message_count = 0
+        conftest_failed = False
         async for message in stream_generate_conftest_response(test_point=test_point, workspace=workspace):
             message_count += 1
 
@@ -828,10 +839,32 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
             # 判断是否是错误消息
             is_error = getattr(message, 'error', False) if hasattr(message, 'error') else False
             if is_error:
+                conftest_failed = True
                 update_task_status("failed", "conftest生成")
                 write_task_log(task_id, "❌ conftest.py生成失败，终止流程")
                 write_task_end_log(task_id, "failed")
+                # ========== 统计：保存失败状态 ==========
+                metrics_service.save_flow(flow_id, status="failed")
+                # ======================================
                 return
+
+        # ========== 统计：记录生成conftest耗时 ==========
+        conftest_end_time = datetime.now()
+        metrics_service.record_conftest_duration(flow_id, conftest_start_time, conftest_end_time)
+        # ============================================
+
+        # ========== 统计：记录 Claude SDK 分析指标（后台执行，不阻塞主流程）==========
+        import getpass
+        import asyncio
+        current_username = getpass.getuser()
+        try:
+            # 使用 create_task 后台执行，不阻塞主流程
+            asyncio.create_task(metrics_service.record_claude_analysis_metrics(flow_id, current_username))
+        except Exception as e:
+            logger.warning(f"记录 Claude 分析指标失败: {e}")
+        # 休眠5秒后再执行后续业务
+        await asyncio.sleep(5)
+        # ============================================
 
         logger.info(f"Task {task_id}: conftest.py 生成完成，共处理 {message_count} 条消息")
         write_task_log(task_id, f"✓ conftest.py 生成完成 (处理了 {message_count} 条消息)")
@@ -904,6 +937,10 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
         from app.services.cc_workflow import stream_test_script_response
 
+        # ========== 统计：记录生成脚本开始时间 ==========
+        script_start_time = datetime.now()
+        # ==============================================
+
         # 重置解析器计数器
         parser.reset_counters()
         message_count = 0
@@ -926,7 +963,15 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                 update_task_status("failed", "测试脚本生成")
                 write_task_log(task_id, "❌ 测试脚本生成失败，终止流程")
                 write_task_end_log(task_id, "failed")
+                # ========== 统计：保存失败状态 ==========
+                metrics_service.save_flow(flow_id, status="failed")
+                # ======================================
                 return
+
+        # ========== 统计：记录生成脚本耗时 ==========
+        script_end_time = datetime.now()
+        metrics_service.record_script_duration(flow_id, script_start_time, script_end_time)
+        # ===========================================
 
         logger.info(f"Task {task_id}: 测试脚本生成完成，共处理 {message_count} 条消息")
         write_task_log(task_id, f"✓ 测试脚本生成完成 (处理了 {message_count} 条消息)")
@@ -945,6 +990,9 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
             write_task_log(task_id, "❌ 未找到部署的执行机IP，请先调用 /deploy 接口部署环境")
             update_task_status("failed", "ITC脚本执行")
             write_task_end_log(task_id, "failed")
+            # ========== 统计：保存失败状态 ==========
+            metrics_service.save_flow(flow_id, status="failed")
+            # ======================================
             return
 
         write_task_log(task_id, f"ℹ️ 执行机IP: {executorip}")
@@ -966,6 +1014,10 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
             executorip=executorip
         )
 
+        # ========== 统计：记录ITC run开始时间 ==========
+        itc_run_start_time = datetime.now()
+        # ==============================================
+
         try:
             result = await itc_service.run_script(itc_request)
         except Exception as e:
@@ -975,6 +1027,11 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
                 "return_info": f"ITC run 调用异常: {str(e)}",
                 "result": None
             }
+
+        # ========== 统计：记录ITC run耗时 ==========
+        itc_run_end_time = datetime.now()
+        metrics_service.record_itc_run_duration(flow_id, itc_run_start_time, itc_run_end_time)
+        # ========================================
 
         logger.info(f"Task {task_id}: ITC run 接口返回: {result}")
 
@@ -993,6 +1050,10 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         # 写入任务结束标识
         write_task_end_log(task_id, "completed")
 
+        # ========== 统计：保存流程统计数据 ==========
+        metrics_service.save_flow(flow_id, status="completed")
+        # ===========================================
+
     except Exception as e:
         import traceback
         error_msg = f"自动化测试流程执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
@@ -1003,6 +1064,13 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
         # 写入任务结束标识
         write_task_end_log(task_id, "failed")
+
+        # ========== 统计：保存失败状态 ==========
+        try:
+            metrics_service.save_flow(flow_id, status="failed")
+        except Exception as metrics_error:
+            logger.error(f"保存统计数据失败: {metrics_error}")
+        # ======================================
 
 
 def return_code_to_message(result: dict) -> str:

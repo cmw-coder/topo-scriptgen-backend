@@ -36,7 +36,7 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
     4. Windows 路径（反斜杠）会自动转换为 ITC 期望的格式（正斜杠）
     5. 本接口立即返回成功响应，实际的部署在后台异步执行
     6. 部署完成后，设备列表会保存到全局静态变量，可通过 /deployDeviceList 接口查询
-    
+
     """
     try:
         import getpass
@@ -45,6 +45,16 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
 
         # 初始化 logger
         logger = logging.getLogger(__name__)
+
+        # ========== 统计：记录调用deploy时间 ==========
+        from datetime import datetime
+        deploy_call_time = datetime.now()
+        try:
+            from app.services.metrics_service import metrics_service
+            metrics_service.record_deploy_call(deploy_call_time)
+        except Exception as metrics_error:
+            logger.warning(f"记录deploy调用时间失败: {metrics_error}")
+        # ==============================================
 
         # 获取用户名
         username = getpass.getuser()
@@ -524,7 +534,7 @@ async def get_all_pytestlog_json_files():
         raise HTTPException(status_code=500, detail=f"获取 .pytest.json 文件内容失败: {str(e)}")
 
 
-@router.get("/itcresult", response_model=ItcResultResponse)
+@router.get("/itc/itcresult", response_model=ItcResultResponse)
 async def get_itc_run_result():
     """获取ITC最新运行结果
 
