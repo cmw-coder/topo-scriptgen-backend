@@ -9,7 +9,8 @@ from app.models.itc.itc_models import (
     ItcLogFileListResponse,
     ItcLogFileContentRequest,
     ItcLogFileContentResponse,
-    AllPytestJsonFilesResponse
+    AllPytestJsonFilesResponse,
+    ItcResultResponse
 )
 from app.services.itc.itc_service import itc_service, itc_log_service
 from app.models.common import BaseResponse
@@ -521,6 +522,35 @@ async def get_all_pytestlog_json_files():
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取 .pytest.json 文件内容失败: {str(e)}")
+
+
+@router.get("/itcresult", response_model=ItcResultResponse)
+async def get_itc_run_result():
+    """获取ITC最新运行结果
+
+    返回最近一次调用 ITC run 接口的结果。
+
+    返回数据结构：
+    - data.status: "ok" 表示执行成功，"error" 表示执行异常
+    - data.message: 结果消息或错误信息
+
+    如果没有运行记录或 aigc.json 文件不存在，message 返回 "itc 执行中请稍后"
+
+    Returns:
+        ItcResultResponse: 包含 ITC 运行结果的响应
+    """
+    try:
+        # 从 aigc.json 读取 ITC run 结果
+        result_data = itc_service._get_itc_run_result()
+
+        return ItcResultResponse(
+            data=result_data
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取ITC运行结果失败: {str(e)}")
 
 
 __all__ = ["router"]

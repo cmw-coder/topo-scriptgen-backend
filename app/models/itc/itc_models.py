@@ -109,6 +109,17 @@ class AllPytestJsonFilesResponse(BaseModel):
     total_count: Optional[int] = Field(None, description="文件总数")
 
 
+class ItcResultData(BaseModel):
+    """ITC运行结果数据模型"""
+    status: str = Field(description="运行状态: ok/error")
+    message: Optional[str] = Field(None, description="结果消息或错误信息")
+
+
+class ItcResultResponse(BaseModel):
+    """ITC运行结果响应模型"""
+    data: ItcResultData = Field(description="ITC运行结果数据")
+
+
 __all__ = [
     "DeployRequest",
     "RunScriptRequest",
@@ -125,5 +136,7 @@ __all__ = [
     "ItcLogFileListResponse",
     "ItcLogFileContentRequest",
     "ItcLogFileContentResponse",
-    "AllPytestJsonFilesResponse"
+    "AllPytestJsonFilesResponse",
+    "ItcResultData",
+    "ItcResultResponse"
 ]

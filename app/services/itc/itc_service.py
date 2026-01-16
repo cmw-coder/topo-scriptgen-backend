@@ -238,6 +238,159 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             logger.warning(f"读取 aigc.json 时出错: {str(e)}")
             return None
 
+    def _save_itc_run_result(self, run_result: Dict[str, Any]) -> None:
+        """保存 ITC run 接口返回的结果到 aigc.json
+
+        将 ITC run 接口返回的结果保存到 aigc.json 的 itc_run_result 字段中。
+
+        Args:
+            run_result: ITC run 接口返回的结果字典
+        """
+        try:
+            work_dir = settings.get_work_directory()
+            aigc_json_path = os.path.join(work_dir, ".aigc_tool", "aigc.json")
+
+            # 创建 .aigc_tool 目录（如果不存在）
+            aigc_tool_dir = os.path.join(work_dir, ".aigc_tool")
+            os.makedirs(aigc_tool_dir, exist_ok=True)
+
+            # 读取现有的 aigc.json（如果存在）
+            existing_config = None
+            if os.path.exists(aigc_json_path):
+                try:
+                    with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                        existing_config = json.load(f)
+                    logger.info(f"读取到现有的 aigc.json 配置")
+                except Exception as e:
+                    logger.warning(f"读取现有 aigc.json 失败: {str(e)}，将创建新文件")
+
+            # 构造或更新 aigc.json 数据
+            if existing_config is None:
+                # 创建新配置
+                aigc_config = {}
+            else:
+                # 更新现有配置
+                aigc_config = existing_config.copy()
+
+            # 保存 ITC run 结果
+            aigc_config["itc_run_result"] = run_result
+            logger.info(f"已保存 ITC run 结果到 aigc.json")
+
+            # 写入 JSON 文件
+            with open(aigc_json_path, 'w', encoding='utf-8') as f:
+                json.dump(aigc_config, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"已更新 aigc.json 文件: {aigc_json_path}")
+
+        except Exception as e:
+            logger.error(f"保存 ITC run 结果到 aigc.json 失败: {str(e)}")
+
+    def _clear_itc_run_result(self) -> None:
+        """清除 aigc.json 中的 itc_run_result 字段
+
+        在调用 ITC run 接口前调用，确保查询接口能正确返回"执行中"状态。
+        """
+        try:
+            work_dir = settings.get_work_directory()
+            aigc_json_path = os.path.join(work_dir, ".aigc_tool", "aigc.json")
+
+            # 检查文件是否存在
+            if not os.path.exists(aigc_json_path):
+                logger.info(f"aigc.json 文件不存在，无需清除: {aigc_json_path}")
+                return
+
+            # 读取现有的 aigc.json
+            with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            # 移除 itc_run_result 字段
+            if "itc_run_result" in config:
+                del config["itc_run_result"]
+                logger.info("已清除 aigc.json 中的 itc_run_result 字段")
+
+                # 写回文件
+                with open(aigc_json_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+            else:
+                logger.info("aigc.json 中没有 itc_run_result 字段，无需清除")
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"解析 aigc.json 失败: {str(e)}")
+        except Exception as e:
+            logger.warning(f"清除 itc_run_result 失败: {str(e)}")
+
+    def _get_itc_run_result(self) -> Dict[str, Any]:
+        """从 aigc.json 读取 ITC run 结果
+
+        Returns:
+            包含 status 和 message 的字典
+            - status: "ok" 或 "error"
+            - message: 结果消息或错误信息
+        """
+        try:
+            work_dir = settings.get_work_directory()
+            aigc_json_path = os.path.join(work_dir, ".aigc_tool", "aigc.json")
+
+            # 检查文件是否存在
+            if not os.path.exists(aigc_json_path):
+                logger.info(f"aigc.json 文件不存在: {aigc_json_path}")
+                return {
+                    "status": "ok",
+                    "message": "itc 执行中请稍后"
+                }
+
+            # 读取文件
+            with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if not content:
+                    logger.info("aigc.json 文件为空")
+                    return {
+                        "status": "ok",
+                        "message": "itc 执行中请稍后"
+                    }
+
+                config = json.loads(content)
+
+            # 获取 itc_run_result 字段
+            itc_run_result = config.get("itc_run_result")
+
+            if not itc_run_result:
+                logger.info("aigc.json 中未找到 itc_run_result 字段")
+                return {
+                    "status": "ok",
+                    "message": "itc 执行中请稍后"
+                }
+
+            # 根据 return_code 判断 status
+            return_code = itc_run_result.get("return_code")
+            return_info = itc_run_result.get("return_info", "")
+
+            if return_code == "200":
+                return {
+                    "status": "ok",
+                    "message": str(return_info) if return_info else "执行成功"
+                }
+            else:
+                # 接口异常返回 error
+                error_msg = str(return_info) if return_info else "未知错误"
+                return {
+                    "status": "error",
+                    "message": error_msg
+                }
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"解析 aigc.json 失败: {str(e)}")
+            return {
+                "status": "ok",
+                "message": "itc 执行中请稍后"
+            }
+        except Exception as e:
+            logger.warning(f"读取 aigc.json 时出错: {str(e)}")
+            return {
+                "status": "ok",
+                "message": "itc 执行中请稍后"
+            }
+
     def _cleanup_aigc_config_after_deploy_failure(self) -> None:
         """在 deploy 失败后清理 aigc.json 配置
 
@@ -1040,6 +1193,11 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         """运行测试脚本"""
         logger.info(f"运行脚本请求 - scriptspath: {request.scriptspath}, executorip: {request.executorip}")
 
+        # 在调用 ITC run 前，清除 aigc.json 中的旧运行结果
+        # 这样查询接口可以正确返回"执行中"状态
+        self._clear_itc_run_result()
+        logger.info("已清除 aigc.json 中的旧 ITC run 结果")
+
         # 在调用 ITC run 前，拷贝工作目录中的 Python 脚本到目标目录
         try:
             logger.info("开始拷贝 Python 脚本到目标目录...")
@@ -1057,6 +1215,9 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         result = await self._make_request("run", data)
 
         logger.info(f"运行脚本响应: {result}")
+
+        # 保存 ITC run 结果到 aigc.json
+        self._save_itc_run_result(result)
 
         # 直接返回字典，不使用 Pydantic 模型验证
         return result
