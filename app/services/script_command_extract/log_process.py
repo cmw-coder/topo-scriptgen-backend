@@ -288,6 +288,8 @@ class LOGPROCESS:
         return results
 
     def get_command_exec_result(self, exec_info):
+        if not exec_info:
+            return []
         lines = exec_info.split('\n')
         result_lines = []
         for i, line in enumerate(lines):
@@ -339,7 +341,7 @@ class LOGPROCESS:
             if "CheckCommand" in key:
                 tmp_dict["CheckCommand"] = value
                 commands_info.append(tmp_dict)
-            elif "send" in key:
+            elif key.startswith("send"):
                 tmp_dict["send"] = value
                 commands_info.append(tmp_dict)
             elif key in atf_check_type:
@@ -1118,7 +1120,7 @@ class LOGPROCESS:
                                         dut_commond["cmd"] = "return"
                                     if "FAIL" == dut_commond["exec_res"] or "WARNING" == dut_commond["exec_res"]:
                                         splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
-                                    else:
+                                    elif dut_commond["cmd"]:
                                         splice_res = splice_res + dut_commond["cmd"] + "\n"
                                     if dut_commond['expect']:
                                         include_str = ""
