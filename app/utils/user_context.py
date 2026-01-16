@@ -31,6 +31,8 @@ class UserContext:
     def set_permissions_recursive(cls, path, mode, silent=False):
         """递归设置目录及其所有内容的权限（静默模式，不记录日志）
 
+        跳过 log 子目录，不修改其权限。
+
         Args:
             path: 目录或文件路径
             mode: 权限模式（如 0o777）
@@ -45,8 +47,11 @@ class UserContext:
                 # 如果是文件，直接设置权限
                 os.chmod(path, mode)
             else:
-                # 如果是目录，递归设置权限
+                # 如果是目录，递归设置权限（跳过 log 子目录）
                 for root, dirs, files in os.walk(path):
+                    # 跳过 log 目录
+                    if 'log' in dirs:
+                        dirs.remove('log')
                     for dir_name in dirs:
                         dir_path = os.path.join(root, dir_name)
                         try:
