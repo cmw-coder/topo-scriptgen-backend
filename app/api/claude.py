@@ -277,24 +277,21 @@ async def execute_script_write_back(task_id: str, script_full_path: str, script_
         logger.info(f"Task {task_id}: 从 filename_command_mapping 获取旧命令")
         send_message("info", "===== 第1步：获取旧命令 =====", "processing")
 
-        from app.services.script_command_extract import filename_command_mapping
+        # 首先刷新全局变量，确保使用最新的日志数据
+        from app.services.script_command_extract import refresh_static_variables, find_command_by_filename
+        logger.info(f"Task {task_id}: 刷新 filename_command_mapping...")
+        refresh_static_variables()
+        logger.info(f"Task {task_id}: 刷新完成，开始查找旧命令...")
 
-        # 尝试从 filename_command_mapping 获取旧命令
-        old_command = None
-        if script_filename in filename_command_mapping:
-            old_command = filename_command_mapping[script_filename]
+        # 使用新的查找函数（支持精确匹配、去除扩展名匹配、模糊匹配）
+        old_command = find_command_by_filename(script_filename)
+
+        if old_command:
             send_message("info", f"✓ 找到旧命令（长度: {len(old_command)} 字符）", "processing")
+            logger.info(f"Task {task_id}: 成功找到旧命令，长度: {len(old_command)} 字符")
         else:
-            # 尝试模糊匹配
-            for key, value in filename_command_mapping.items():
-                if script_filename in key or key in script_filename:
-                    old_command = value
-                    send_message("info", f"✓ 通过模糊匹配找到旧命令（key: {key}）", "processing")
-                    break
-
-        if not old_command:
             send_message("warning", "⚠ 未找到旧命令，将使用空命令", "processing")
-            old_command = ""
+            logger.warning(f"Task {task_id}: 未找到匹配的旧命令: {script_filename}")
 
         # ========== 第2步：创建临时文件 ==========
         logger.info(f"Task {task_id}: 创建临时文件")

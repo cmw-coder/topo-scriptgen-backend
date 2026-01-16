@@ -22,6 +22,77 @@ from app.core.config import settings
 filename_command_mapping: Dict[str, str] = {}
 
 
+def find_command_by_filename(script_filename: str) -> str:
+    """
+    根据脚本文件名查找对应的命令
+
+    优先级：
+    1. 精确匹配文件名
+    2. 去除扩展名后匹配
+    3. 使用更严格的模糊匹配（基于文件名的相似度）
+
+    Args:
+        script_filename: 脚本文件名（如 test_script3.py）
+
+    Returns:
+        匹配到的命令，如果未找到则返回空字符串
+    """
+    global filename_command_mapping
+
+    if not script_filename:
+        return ""
+
+    # 1. 精确匹配
+    if script_filename in filename_command_mapping:
+        return filename_command_mapping[script_filename]
+
+    # 2. 去除扩展名后匹配（处理 .py 等扩展名不一致的情况）
+    name_without_ext = os.path.splitext(script_filename)[0]
+    for key, value in filename_command_mapping.items():
+        key_without_ext = os.path.splitext(key)[0]
+        if name_without_ext == key_without_ext:
+            return value
+
+    # 3. 更严格的模糊匹配：只匹配包含文件名核心部分的键
+    # 优先匹配最相似的键（基于公共前缀/后缀长度）
+    best_match_key = None
+    best_match_score = 0
+
+    for key in filename_command_mapping.keys():
+        # 计算相似度：公共前缀或后缀的长度
+        # 例如：test_script3.py 和 test_script3_function.py
+        #      公共部分是 test_script3，得分应为 12
+
+        # 去除扩展名进行比较
+        key_core = os.path.splitext(key)[0].lower()
+        name_core = name_without_ext.lower()
+
+        # 检查是否一个是另一个的前缀或后缀
+        if key_core.startswith(name_core):
+            score = len(name_core)
+        elif name_core.startswith(key_core):
+            score = len(key_core)
+        elif name_core in key_core or key_core in name_core:
+            # 包含关系，但不是前缀/后缀，降低权重
+            score = max(len(name_core), len(key_core)) * 0.5
+        else:
+            continue
+
+        if score > best_match_score:
+            best_match_score = score
+            best_match_key = key
+
+    # 只有当相似度超过阈值时才返回（至少3个字符的匹配）
+    if best_match_key and best_match_score >= 3:
+        print(f"[agent_helper] 模糊匹配: '{script_filename}' -> '{best_match_key}' (score: {best_match_score})")
+        return filename_command_mapping[best_match_key]
+
+    # 未找到匹配
+    print(f"[agent_helper] 未找到匹配的命令: '{script_filename}'")
+    print(f"[agent_helper] 可用的键: {list(filename_command_mapping.keys())}")
+    return ""
+
+
 def refresh_static_variables() -> Dict[str, str]:
     """
     从日志文件中刷新全局静态变量

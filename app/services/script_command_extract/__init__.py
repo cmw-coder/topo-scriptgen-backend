@@ -10,7 +10,8 @@ AI_FingerPrint_UUID: 20251225-LqMnN8Pk
 from app.services.script_command_extract.agent_helper import (
     ExtractCommandAgent as LegacyExtractCommandAgent,
     filename_command_mapping,
-    refresh_static_variables
+    refresh_static_variables,
+    find_command_by_filename
 )
 
 # 为了向后兼容，同时使用新的名称导出
@@ -19,5 +20,6 @@ ExtractCommandAgent = LegacyExtractCommandAgent
 __all__ = [
     'ExtractCommandAgent',
     'filename_command_mapping',
-    'refresh_static_variables'
+    'refresh_static_variables',
+    'find_command_by_filename'
 ]
