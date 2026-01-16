@@ -1118,10 +1118,12 @@ class ItcLogService:
 
     def __init__(self):
         """初始化ITC日志服务"""
-        self.log_base_path = "/opt/coder/statistics/build/aigc_tool"
+        self.itc_log_base_path = "/opt/coder/statistics/build/aigc_tool"
 
     def _get_user_log_dir(self, username: Optional[str] = None) -> Path:
         """获取用户的ITC日志目录
+
+        优先使用 ITC 服务器日志目录，如果不存在则使用工作区 logs 目录
 
         Args:
             username: 用户名，如果为None则使用当前系统用户名
@@ -1129,44 +1131,70 @@ class ItcLogService:
         Returns:
             Path: 用户ITC日志目录的完整路径
         """
+        # 使用 ITC 日志目录: /opt/coder/statistics/build/aigc_tool/{username}/log/
         if username is None:
-            # 使用 getpass 模块获取当前系统用户名（跨平台兼容）
             import getpass
             username = getpass.getuser()
 
-        # 构建ITC日志目录路径: /opt/coder/statistics/build/aigc_tool/{username}/log/
-        log_dir = Path(self.log_base_path) / username / "log"
-        return log_dir
+        itc_log_dir = Path(self.itc_log_base_path) / username / "log"
 
-    async def get_itc_log_files(self, username: Optional[str] = None) -> tuple[bool, str, Optional[List[Dict[str, Any]]]]:
+        # 检查 ITC 日志目录是否存在
+        if itc_log_dir.exists() and itc_log_dir.is_dir():
+            logger.info(f"使用 ITC 日志目录: {itc_log_dir}")
+            return itc_log_dir
+
+        # 使用工作区 logs 目录
+        work_dir = settings.get_work_directory()
+        workspace_log_dir = Path(work_dir) / "logs"
+        logger.info(f"使用工作区 log 目录: {workspace_log_dir}")
+        return workspace_log_dir
+
+    async def get_itc_log_files(self, username: Optional[str] = None) -> tuple[bool, str, Optional[List[Dict[str, Any]]], Optional[Dict[str, Any]]]:
         """获取指定用户的ITC日志文件列表
+
+        优先使用 ITC 服务器日志目录，如果不存在则使用工作区 logs 目录
+
+        对于 .pytestlog.json 后缀的文件，会解析其中的 Result 和 elapsed_time 属性
 
         Args:
             username: 用户名，如果为None则使用当前系统用户名
 
         Returns:
-            tuple: (success, message, log_files)
+            tuple: (success, message, log_files, statistics)
                 - success: 是否成功
                 - message: 响应消息
                 - log_files: ITC日志文件信息列表，失败时为None
+                - statistics: 统计信息（仅.pytestlog.json文件），包含 result_counts 和 total_elapsed_time
         """
         try:
             log_dir = self._get_user_log_dir(username)
 
-            # 检查目录是否存在
+            # 检查目录是否存在，如果不存在则创建
             if not log_dir.exists():
-                logger.warning(f"ITC日志目录不存在: {log_dir}")
-                return True, f"ITC日志目录不存在: {log_dir}", []
+                logger.warning(f"日志目录不存在，尝试创建: {log_dir}")
+                try:
+                    log_dir.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"已创建日志目录: {log_dir}")
+                except Exception as e:
+                    logger.error(f"无法创建日志目录: {str(e)}")
+                    return True, f"日志目录不存在且无法创建: {log_dir}", [], None
 
             if not log_dir.is_dir():
-                logger.error(f"ITC日志路径不是目录: {log_dir}")
-                return False, f"ITC日志路径不是目录: {log_dir}", None
+                logger.error(f"日志路径不是目录: {log_dir}")
+                return False, f"日志路径不是目录: {log_dir}", None, None
 
             # 读取目录中的所有文件
             log_files: List[Dict[str, Any]] = []
+            result_counts: Dict[str, int] = {}
+            elapsed_time_list: List[str] = []
+
             for file_path in log_dir.iterdir():
                 # 只处理文件，跳过目录
                 if file_path.is_file():
+                    # 过滤掉 .log 格式的文件
+                    if file_path.name.endswith(".log"):
+                        continue
+
                     try:
                         # 获取文件信息
                         stat = file_path.stat()
@@ -1182,6 +1210,32 @@ class ItcLogService:
                             "size": stat.st_size,
                             "modified_time": modified_time
                         }
+
+                        # 检查是否是 .pytestlog.json 文件
+                        if file_path.name.endswith(".pytestlog.json"):
+                            # 尝试解析文件内容获取 Result 和 elapsed_time
+                            try:
+                                with open(file_path, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                    data = json.loads(content)
+
+                                    # 提取 Result 和 elapsed_time（保持原始格式，不做错误处理）
+                                    result = data.get("Result")
+                                    elapsed_time = data.get("elapsed_time")
+
+                                    if result is not None:
+                                        log_file_info["Result"] = result
+                                        # 统计 Result 类型个数
+                                        result_counts[result] = result_counts.get(result, 0) + 1
+
+                                    if elapsed_time is not None:
+                                        log_file_info["elapsed_time"] = elapsed_time
+                                        elapsed_time_list.append(elapsed_time)
+
+                            except Exception as parse_error:
+                                # 解析失败时不抛出错误，继续处理其他文件
+                                logger.debug(f"解析 .pytestlog.json 文件失败 {file_path.name}: {str(parse_error)}")
+
                         log_files.append(log_file_info)
 
                     except Exception as e:
@@ -1191,15 +1245,119 @@ class ItcLogService:
             # 按文件名排序
             log_files.sort(key=lambda x: x["filename"])
 
-            logger.info(f"成功获取ITC日志文件列表，共 {len(log_files)} 个文件")
-            return True, f"成功获取ITC日志文件列表，共 {len(log_files)} 个文件", log_files
+            # 构建统计信息
+            statistics = None
+            if result_counts or elapsed_time_list:
+                # 计算 elapsed_time 总和
+                total_elapsed_time = None
+                if elapsed_time_list:
+                    total_seconds = 0.0
+                    for time_str in elapsed_time_list:
+                        try:
+                            # 解析时间格式 "H:MM:SS.ffffff" 或 "MM:SS.ffffff"
+                            parts = time_str.split(":")
+                            if len(parts) == 3:
+                                # 格式: H:MM:SS.ffffff
+                                hours = int(parts[0])
+                                minutes = int(parts[1])
+                                seconds = float(parts[2])
+                                total_seconds += hours * 3600 + minutes * 60 + seconds
+                            elif len(parts) == 2:
+                                # 格式: MM:SS.ffffff
+                                minutes = int(parts[0])
+                                seconds = float(parts[1])
+                                total_seconds += minutes * 60 + seconds
+                        except (ValueError, IndexError) as e:
+                            # 解析失败时跳过该时间
+                            logger.debug(f"解析时间字符串失败: {time_str}, 错误: {str(e)}")
+                            continue
+
+                    # 将总秒数转换为时分秒格式
+                    total_hours = int(total_seconds // 3600)
+                    total_seconds %= 3600
+                    total_minutes = int(total_seconds // 60)
+                    total_seconds %= 60
+
+                    # 格式化为 "H:MM:SS.ffffff"
+                    total_elapsed_time = f"{total_hours}:{total_minutes:02d}:{total_seconds:06f}"
+
+                statistics = {
+                    "result_counts": result_counts if result_counts else None,
+                    "total_elapsed_time": total_elapsed_time
+                }
+
+            logger.info(f"成功获取日志文件列表，共 {len(log_files)} 个文件")
+            return True, f"成功获取日志文件列表，共 {len(log_files)} 个文件", log_files, statistics
 
         except Exception as e:
-            logger.error(f"获取ITC日志文件列表失败: {str(e)}")
-            return False, f"获取ITC日志文件列表失败: {str(e)}", None
+            logger.error(f"获取日志文件列表失败: {str(e)}")
+            return False, f"获取日志文件列表失败: {str(e)}", None, None
+
+    async def get_all_pytestlog_json_files(self, username: Optional[str] = None) -> tuple[bool, str, Optional[List[Dict[str, Any]]]]:
+        """获取目录下所有 .pytestlog.json 后缀文件的内容
+
+        优先使用 ITC 服务器日志目录，如果不存在则使用工作区 logs 目录
+
+        Args:
+            username: 用户名，如果为None则使用当前系统用户名
+
+        Returns:
+            tuple: (success, message, all_files_content)
+                - success: 是否成功
+                - message: 响应消息
+                - all_files_content: 所有 .pytest.json 文件内容的列表，失败时为None
+        """
+        try:
+            log_dir = self._get_user_log_dir(username)
+
+            # 检查目录是否存在
+            if not log_dir.exists():
+                logger.warning(f"日志目录不存在: {log_dir}")
+                return False, f"日志目录不存在: {log_dir}", None
+
+            if not log_dir.is_dir():
+                logger.error(f"日志路径不是目录: {log_dir}")
+                return False, f"日志路径不是目录: {log_dir}", None
+
+            # 读取目录中所有 .pytestlog.json 文件
+            all_files_content: List[Dict[str, Any]] = []
+
+            for file_path in log_dir.iterdir():
+                # 只处理 .pytestlog.json 文件
+                if file_path.is_file() and file_path.name.endswith(".pytestlog.json"):
+                    try:
+                        # 读取文件内容
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            data = json.loads(content)
+
+                            # 将文件名添加到数据中
+                            if isinstance(data, dict):
+                                data["_filename"] = file_path.name
+
+                            all_files_content.append(data)
+
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"解析 JSON 文件失败 {file_path.name}: {str(e)}")
+                        continue
+                    except Exception as e:
+                        logger.warning(f"读取文件失败 {file_path.name}: {str(e)}")
+                        continue
+
+            # 按文件名排序
+            all_files_content.sort(key=lambda x: x.get("_filename", ""))
+
+            logger.info(f"成功获取 {len(all_files_content)} 个 .pytestlog.json 文件的内容")
+            return True, f"成功获取 {len(all_files_content)} 个 .pytestlog.json 文件的内容", all_files_content
+
+        except Exception as e:
+            logger.error(f"获取 .pytestlog.json 文件内容失败: {str(e)}")
+            return False, f"获取 .pytestlog.json 文件内容失败: {str(e)}", None
 
     async def get_itc_log_content(self, filename: str, username: Optional[str] = None) -> tuple[bool, str, Optional[dict]]:
         """读取指定ITC日志文件的内容
+
+        优先使用 ITC 服务器日志目录，如果不存在则使用工作区 logs 目录
 
         Args:
             filename: ITC日志文件名
@@ -1224,8 +1382,8 @@ class ItcLogService:
 
             # 检查文件是否存在
             if not file_path.exists():
-                logger.warning(f"ITC日志文件不存在: {file_path}")
-                return False, f"ITC日志文件不存在: {filename}", None
+                logger.warning(f"日志文件不存在: {file_path}")
+                return False, f"日志文件不存在: {filename}", None
 
             if not file_path.is_file():
                 logger.error(f"路径不是文件: {file_path}")
@@ -1250,15 +1408,15 @@ class ItcLogService:
                 "encoding": "utf-8"
             }
 
-            logger.info(f"成功读取ITC日志文件: {filename}, 大小: {stat.st_size} 字节")
-            return True, f"成功读取ITC日志文件: {filename}", data
+            logger.info(f"成功读取日志文件: {filename}, 大小: {stat.st_size} 字节")
+            return True, f"成功读取日志文件: {filename}", data
 
         except UnicodeDecodeError as e:
             logger.error(f"文件编码错误: {str(e)}")
             return False, f"文件编码错误，无法读取文件内容", None
         except Exception as e:
-            logger.error(f"读取ITC日志文件失败: {str(e)}")
-            return False, f"读取ITC日志文件失败: {str(e)}", None
+            logger.error(f"读取日志文件失败: {str(e)}")
+            return False, f"读取日志文件失败: {str(e)}", None
 
 
 # 创建 ITC 服务实例

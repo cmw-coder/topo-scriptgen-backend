@@ -8,7 +8,8 @@ from app.models.itc.itc_models import (
     SimpleResponse,
     ItcLogFileListResponse,
     ItcLogFileContentRequest,
-    ItcLogFileContentResponse
+    ItcLogFileContentResponse,
+    AllPytestJsonFilesResponse
 )
 from app.services.itc.itc_service import itc_service, itc_log_service
 from app.models.common import BaseResponse
@@ -433,18 +434,21 @@ async def get_itc_log_files():
     返回当前用户的ITC日志目录(/opt/coder/statistics/build/aigc_tool/{username}/log/)下的所有文件列表
     自动使用当前系统用户名，无需传递参数
 
+    对于 .pytestlog.json 文件，会额外解析其中的 Result 和 elapsed_time 属性，并在响应中返回统计信息
+
     Returns:
-        ItcLogFileListResponse: 包含ITC日志文件列表的响应
+        ItcLogFileListResponse: 包含ITC日志文件列表和统计信息的响应
     """
     try:
-        success, message, log_files = await itc_log_service.get_itc_log_files()
+        success, message, log_files, statistics = await itc_log_service.get_itc_log_files()
 
         if success:
             return ItcLogFileListResponse(
                 status="ok",
                 message=message,
                 data=log_files,
-                total_count=len(log_files) if log_files else 0
+                total_count=len(log_files) if log_files else 0,
+                statistics=statistics
             )
         else:
             raise HTTPException(status_code=400, detail=message)
@@ -486,5 +490,37 @@ async def get_itc_log_content(request: ItcLogFileContentRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取ITC日志文件内容失败: {str(e)}")
+
+
+@router.get("/logs/all-pytestlog-json", response_model=AllPytestJsonFilesResponse)
+async def get_all_pytestlog_json_files():
+    """获取所有 .pytestlog.json 文件的内容
+
+    返回日志目录下所有 .pytestlog.json 后缀文件的完整 JSON 内容
+
+    返回的数据结构是一个列表，列表中每个对象是单个文件的 JSON 内容，
+    并且每个对象中会包含一个 "_filename" 字段表示文件名
+
+    Returns:
+        AllPytestJsonFilesResponse: 包含所有 .pytestlog.json 文件内容的响应
+    """
+    try:
+        success, message, all_files_content = await itc_log_service.get_all_pytestlog_json_files()
+
+        if success:
+            return AllPytestJsonFilesResponse(
+                status="ok",
+                message=message,
+                data=all_files_content,
+                total_count=len(all_files_content) if all_files_content else 0
+            )
+        else:
+            raise HTTPException(status_code=400, detail=message)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取 .pytest.json 文件内容失败: {str(e)}")
+
 
 __all__ = ["router"]

@@ -70,6 +70,14 @@ class ItcLogFileInfo(BaseModel):
     filename: str = Field(description="文件名")
     size: int = Field(description="文件大小(字节)")
     modified_time: str = Field(description="最后修改时间(格式: YYYY-MM-DD HH:MM:SS)")
+    Result: Optional[str] = Field(None, description="测试结果（仅.pytestlog.json文件）")
+    elapsed_time: Optional[str] = Field(None, description="耗时（仅.pytestlog.json文件）")
+
+
+class ItcLogStatistics(BaseModel):
+    """ITC日志统计信息"""
+    result_counts: Optional[Dict[str, int]] = Field(None, description="每个Result类型的个数统计")
+    total_elapsed_time: Optional[str] = Field(None, description="所有elapsed_time的总和（原始格式）")
 
 
 class ItcLogFileListResponse(BaseModel):
@@ -78,6 +86,7 @@ class ItcLogFileListResponse(BaseModel):
     message: Optional[str] = Field(None, description="响应消息")
     data: Optional[List[ItcLogFileInfo]] = Field(None, description="ITC日志文件列表")
     total_count: Optional[int] = Field(None, description="文件总数")
+    statistics: Optional[ItcLogStatistics] = Field(None, description="统计信息（仅.pytestlog.json文件）")
 
 
 class ItcLogFileContentRequest(BaseModel):
@@ -91,6 +100,15 @@ class ItcLogFileContentResponse(BaseModel):
     message: Optional[str] = Field(None, description="响应消息")
     data: Optional[dict] = Field(None, description="文件信息及内容")
 
+
+class AllPytestJsonFilesResponse(BaseModel):
+    """所有 pytest.json 文件内容响应模型"""
+    status: str = Field(description="响应状态: ok/error")
+    message: Optional[str] = Field(None, description="响应消息")
+    data: Optional[List[Dict[str, Any]]] = Field(None, description="所有 pytest.json 文件内容的列表")
+    total_count: Optional[int] = Field(None, description="文件总数")
+
+
 __all__ = [
     "DeployRequest",
     "RunScriptRequest",
@@ -103,7 +121,9 @@ __all__ = [
     "SimpleResponse",
     # ITC日志相关模型
     "ItcLogFileInfo",
+    "ItcLogStatistics",
     "ItcLogFileListResponse",
     "ItcLogFileContentRequest",
-    "ItcLogFileContentResponse"
+    "ItcLogFileContentResponse",
+    "AllPytestJsonFilesResponse"
 ]
