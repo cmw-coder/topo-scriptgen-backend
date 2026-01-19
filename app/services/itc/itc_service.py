@@ -1127,7 +1127,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         thread.start()
         logger.info(f"后台部署线程已启动: {thread.name}")
 
-    def _copy_python_scripts_to_target_dir(self) -> str:
+    def _copy_python_scripts_to_target_dir(self, run_new = False) -> str:
         """将工作目录中的 Python 脚本拷贝到目标目录并授权
 
         操作步骤：
@@ -1185,20 +1185,44 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             test_scripts = glob.glob(test_scripts_pattern)
 
             copied_count = 0
-
-            # 拷贝 test 开头的脚本
-            for script_path in test_scripts:
-                if os.path.isfile(script_path):
+            if run_new:
+                newest_file = None
+                newest_time = 0
+                for script_path in test_scripts:
+                    #拼装脚本路径
                     script_name = os.path.basename(script_path)
                     target_path = os.path.join(target_dir, script_name)
+                    
+                    if os.path.isfile(script_path):
+                        #删除旧脚本
+                        os.remove(target_path)
+                        file_mtime = os.path.getmtime(script_path)
+                        if file_mtime > newest_time:
+                            newest_time = file_mtime
+                            newest_file = script_path
+                #cp最新的文件
+                script_name = os.path.basename(newest_file)
+                target_path = os.path.join(target_dir, script_name)
+                # 拷贝文件
+                shutil.copy2(newest_file, target_path)
+                # 设置权限为可读写（777）
+                os.chmod(target_path, 0o777)
+                logger.info(f"已拷贝测试脚本: {script_name} -> {target_path}")
+                copied_count += 1
+            else:           
+                # 拷贝 test 开头的脚本
+                for script_path in test_scripts:
+                    if os.path.isfile(script_path):
+                        script_name = os.path.basename(script_path)
+                        target_path = os.path.join(target_dir, script_name)
 
-                    # 拷贝文件
-                    shutil.copy2(script_path, target_path)
-                    # 设置权限为可读写（777）
-                    os.chmod(target_path, 0o777)
+                        # 拷贝文件
+                        shutil.copy2(script_path, target_path)
+                        # 设置权限为可读写（777）
+                        os.chmod(target_path, 0o777)
 
-                    logger.info(f"已拷贝测试脚本: {script_name} -> {target_path}")
-                    copied_count += 1
+                        logger.info(f"已拷贝测试脚本: {script_name} -> {target_path}")
+                        copied_count += 1
 
             # 查找并拷贝 conftest.py
             conftest_pattern = os.path.join(work_dir, "conftest.py")
@@ -1227,7 +1251,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             logger.error(f"拷贝 Python 脚本失败: {str(e)}", exc_info=True)
             raise
 
-    async def run_script(self, request: RunScriptRequest) -> Dict[str, Any]:
+    async def run_script(self, request: RunScriptRequest, run_new = False) -> Dict[str, Any]:
         """运行测试脚本"""
         logger.info(f"运行脚本请求 - scriptspath: {request.scriptspath}, executorip: {request.executorip}")
 
@@ -1239,7 +1263,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         # 在调用 ITC run 前，拷贝工作目录中的 Python 脚本到目标目录
         try:
             logger.info("开始拷贝 Python 脚本到目标目录...")
-            target_dir = self._copy_python_scripts_to_target_dir()
+            target_dir = self._copy_python_scripts_to_target_dir(run_new)
             logger.info(f"Python 脚本已成功拷贝到: {target_dir}")
         except Exception as e:
             logger.warning(f"拷贝 Python 脚本失败，但继续执行: {str(e)}")

@@ -150,6 +150,51 @@ async def main():
         print(msg) 
 
 
+async def stream_fix_script_response(return_msg: str = "",workspace: str = ""):
+    if not workspace:
+        current_user = getpass.getuser()
+        workspace = f"/home/{current_user}/project"
+    print(f"📂 设置工作区为: {workspace}")
+
+    # 确保目录存在（可选，仅用于演示）
+    if not os.path.exists(workspace):
+        os.makedirs(workspace, exist_ok=True)
+
+    # 配置选项
+    options = ClaudeAgentOptions(
+        # 1. 设置当前工作目录 (Current Working Directory)
+        # Claude 会在这个目录下执行命令，并在该目录的 .claude/skills 中寻找 Project Skills
+        cwd=workspace,
+
+        # 2. 启用项目设置加载，不加project, 避免读取项目下的claude.md
+        setting_sources=["user"], 
+        
+        # 3. 权限模式 (自动接受以演示流程)
+        permission_mode="bypassPermissions",
+        
+        # 4. 允许的工具
+        allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
+
+        # system_prompt={"type": "preset", "preset": "claude_code"}
+    )
+
+    print("🚀 正在发送请求以触发 Skill...\n")
+    prompt = escape_all_special_chars(f"请分析脚本运行日志：{return_msg}中的错误，调用 skill: script_fix 修复工作区:{workspace}内的conftest.py和pytest脚本")
+    print("========================")
+    print(prompt)
+    # 处理转义字符
+    try:
+        async for message in query(
+            prompt=prompt, 
+            options=options
+        ):
+            # 流式返回对象
+            yield message
+
+    except Exception as e:
+        print(f"❌ 发生错误: {e}")
+
+
 if __name__ == "__main__":
     # 使用 async for 来消费上面定义的生成器
     asyncio.run(main())

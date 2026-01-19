@@ -1030,7 +1030,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         # ==============================================
 
         try:
-            result = await itc_service.run_script(itc_request)
+            result = await itc_service.run_script(itc_request,run_new = True)
         except Exception as e:
             logger.error(f"Task {task_id}: ITC run 调用异常: {str(e)}")
             result = {
@@ -1061,10 +1061,115 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         # 写入任务结束标识
         write_task_end_log(task_id, "completed")
 
+
+
+
+        # ========== 阶段4: 调用script fix修复脚本 ==========   
+        #判断result_message是否需要进行修复
+        script_fix = False
+        try:
+            if " 执行失败 (错误码:" in result_message:
+                script_fix = True
+        except Exception as e:
+            print("未获取到itc执行结果")
+        #如果需要修复
+        if script_fix:
+            logger.info(f"Task {task_id}: 开始修复测试脚本")
+            update_task_status("fix", "测试脚本修复")
+            write_task_log(task_id, "\n===== 阶段4: 修复测试脚本 =====")
+
+            from app.services.cc_workflow import stream_fix_script_response
+            # 重置解析器计数器
+            parser.reset_counters()
+            message_count = 0
+
+            async for message in stream_fix_script_response(return_msg = result_message,workspace=workspace):
+                message_count += 1
+                # 使用消息解析器解析消息
+                parsed_info = parser.parse_message(message, stage="测试脚本修复")
+                # 只记录需要记录的信息
+                if parsed_info["should_log"]:
+                    log_entry = parser.format_log_entry(parsed_info)
+                    if log_entry:
+                        write_task_log(task_id, log_entry)
+
+                # 判断是否是错误消息
+                is_error = getattr(message, 'error', False) if hasattr(message, 'error') else False
+                if is_error:
+                    update_task_status("failed", "测试脚本修复")
+                    write_task_log(task_id, "❌ 测试脚本修复失败，终止流程")
+                    write_task_end_log(task_id, "failed")
+                    return
+
+            logger.info(f"Task {task_id}: 测试脚本修复完成，共处理 {message_count} 条消息")
+            write_task_log(task_id, f"✓ 测试脚本修复完成 (处理了 {message_count} 条消息)")
+            
+            #========== 阶段5: 二次调用 ITC run 接口执行脚本 ==========
+            logger.info(f"Task {task_id}: 开始调用 ITC run 接口")
+            update_task_status("running", "ITC脚本执行")
+            write_task_log(task_id, "\n===== 阶段3: 执行测试脚本 =====")
+
+            # 获取 executorip
+            from app.core.config import settings
+            executorip = settings.get_deploy_executor_ip()
+
+            if not executorip:
+                write_task_log(task_id, "❌ 未找到部署的执行机IP，请先调用 /deploy 接口部署环境")
+                update_task_status("failed", "ITC脚本执行")
+                write_task_end_log(task_id, "failed")
+                return
+
+            write_task_log(task_id, f"ℹ️ 执行机IP: {executorip}")
+
+            # 构造脚本路径
+            import getpass
+            username = getpass.getuser()
+            scriptspath = f"//10.144.41.149/webide/aigc_tool/{username}"
+
+            write_task_log(task_id, f"ℹ️ 脚本路径: {scriptspath}")
+            write_task_log(task_id, "⏳ 正在调用 ITC run 接口...")
+
+            # 调用 ITC run 接口
+            from app.services.itc.itc_service import itc_service
+            from app.models.itc.itc_models import RunScriptRequest
+
+            itc_request = RunScriptRequest(
+                scriptspath=scriptspath,
+                executorip=executorip
+            )
+
+            try:
+                result = await itc_service.run_script(itc_request, run_new = True)
+            except Exception as e:
+                logger.error(f"Task {task_id}: ITC run 调用异常: {str(e)}")
+                result = {
+                    "return_code": "500",
+                    "return_info": f"ITC run 调用异常: {str(e)}",
+                    "result": None
+                }
+
+            logger.info(f"Task {task_id}: ITC run 接口返回: {result}")
+
+            # 发送结果消息
+            try:
+                result_message = return_code_to_message(result)
+                write_task_log(task_id, f"\n📊 ITC 执行结果:\n{result_message}")
+            except Exception as e:
+                logger.error(f"Task {task_id}: 发送 ITC 结果消息失败: {str(e)}")
+                write_task_log(task_id, "⚠️ ITC run 执行完成，但结果解析失败")
+
+            # 更新任务状态为完成
+            update_task_status("completed", "ITC脚本执行")
+            write_task_log(task_id, "\n===== 自动化测试流程完成 =====")
+
+            # 写入任务结束标识
+            write_task_end_log(task_id, "completed")
+
         # ========== 统计：保存流程统计数据 ==========
         metrics_service.save_flow(flow_id, status="completed")
         # ===========================================
 
+    #最外面的try
     except Exception as e:
         import traceback
         error_msg = f"自动化测试流程执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
