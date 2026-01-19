@@ -205,6 +205,7 @@ async def run_script():
     - executorip: 从部署的设备列表中自动获取
 
     在运行前会自动：
+    - 删除目标目录下所有 conftest.py 和 test_ 开头的 .py 文件
     - 将工作目录中所有 test 开头的 .py 文件和 conftest.py 拷贝到目标目录
     - 设置目录权限为 755，文件权限为 644
     """
@@ -214,6 +215,9 @@ async def run_script():
         import shutil
         import glob
         import getpass
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         # 从全局变量获取 executorip（取第一个设备的）
         executorip = settings.get_deploy_executor_ip()
@@ -233,6 +237,36 @@ async def run_script():
         # 使用本地路径作为目标目录
         target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
 
+        # 确保目标目录存在
+        os.makedirs(target_dir, exist_ok=True)
+
+        # ========== 第1步：删除目标目录下所有 conftest.py 和 test_ 开头的 .py 文件 ==========
+        deleted_files = []
+        # 查找并删除所有 test_*.py 文件
+        test_pattern = os.path.join(target_dir, "test_*.py")
+        test_files = glob.glob(test_pattern)
+        for file_path in test_files:
+            try:
+                os.remove(file_path)
+                deleted_files.append(os.path.basename(file_path))
+                logger.info(f"已删除目标目录中的测试文件: {os.path.basename(file_path)}")
+            except Exception as e:
+                logger.warning(f"删除文件失败 {file_path}: {str(e)}")
+
+        # 查找并删除所有 conftest.py 文件
+        conftest_pattern = os.path.join(target_dir, "conftest.py")
+        if os.path.exists(conftest_pattern):
+            try:
+                os.remove(conftest_pattern)
+                deleted_files.append("conftest.py")
+                logger.info(f"已删除目标目录中的 conftest.py")
+            except Exception as e:
+                logger.warning(f"删除 conftest.py 失败: {str(e)}")
+
+        if deleted_files:
+            logger.info(f"已删除目标目录中的 {len(deleted_files)} 个文件: {', '.join(deleted_files)}")
+
+        # ========== 第2步：拷贝项目目录下的文件到共享目录 ==========
         # 查找所有需要拷贝的文件：
         # 1. 工作目录下所有 test 开头的 .py 文件
         # 2. 工作目录下的 conftest.py
@@ -248,11 +282,11 @@ async def run_script():
 
         # 拷贝文件到目标目录
         if files_to_copy:
-            # 确保目标目录存在并设置权限
-            os.makedirs(target_dir, exist_ok=True)
-
             # 设置目录权限为 755 (rwxr-xr-x)
-            os.chmod(target_dir, 0o755)
+            try:
+                os.chmod(target_dir, 0o755)
+            except Exception as e:
+                logger.warning(f"设置目标目录权限失败: {str(e)}")
 
             copied_files = []
             for src_file in files_to_copy:
@@ -260,13 +294,16 @@ async def run_script():
                 dst_file = os.path.join(target_dir, filename)
                 shutil.copy2(src_file, dst_file)
                 # 设置文件权限为 644 (rw-r--r--)
-                os.chmod(dst_file, 0o644)
+                try:
+                    os.chmod(dst_file, 0o644)
+                except Exception as e:
+                    logger.warning(f"设置文件权限失败 {filename}: {str(e)}")
                 copied_files.append(filename)
 
             # 返回时包含拷贝的文件信息
-            copy_info = f"已拷贝 {len(copied_files)} 个文件: {', '.join(copied_files)}"
+            copy_info = f"已删除 {len(deleted_files)} 个旧文件，已拷贝 {len(copied_files)} 个文件: {', '.join(copied_files)}"
         else:
-            copy_info = "未找到需要拷贝的测试文件"
+            copy_info = f"已删除 {len(deleted_files)} 个旧文件，未找到需要拷贝的测试文件"
 
         # 构造请求
         from app.models.itc.itc_models import RunScriptRequest

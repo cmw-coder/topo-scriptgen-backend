@@ -516,22 +516,33 @@ async def execute_copy_and_itc_run(task_id: str, script_full_path: str):
         os.makedirs(target_dir, exist_ok=True)
         send_message("info", f"✓ 目标目录已创建: {target_dir}", "processing")
 
-        # 删除目录中的旧 .py 文件（除了 aigc_tool.py）
+        # ========== 删除目标目录下的 conftest.py 和 test_ 开头的 .py 文件 ==========
         import glob
-        py_files = glob.glob(os.path.join(target_dir, "*.py"))
-        deleted_count = 0
-        for py_file in py_files:
-            try:
-                if "aigc_tool" in os.path.basename(py_file):
-                    continue
-                os.remove(py_file)
-                deleted_count += 1
-                logger.info(f"Task {task_id}: 已删除旧文件: {py_file}")
-            except Exception as e:
-                logger.warning(f"Task {task_id}: 删除文件 {py_file} 失败: {str(e)}")
+        deleted_files = []
 
-        if deleted_count > 0:
-            send_message("info", f"✓ 已删除 {deleted_count} 个旧脚本文件", "processing")
+        # 查找并删除所有 test_*.py 文件
+        test_pattern = os.path.join(target_dir, "test_*.py")
+        test_files = glob.glob(test_pattern)
+        for file_path in test_files:
+            try:
+                os.remove(file_path)
+                deleted_files.append(os.path.basename(file_path))
+                logger.info(f"Task {task_id}: 已删除目标目录中的测试文件: {os.path.basename(file_path)}")
+            except Exception as e:
+                logger.warning(f"Task {task_id}: 删除文件 {file_path} 失败: {str(e)}")
+
+        # 查找并删除 conftest.py
+        conftest_pattern = os.path.join(target_dir, "conftest.py")
+        if os.path.exists(conftest_pattern):
+            try:
+                os.remove(conftest_pattern)
+                deleted_files.append("conftest.py")
+                logger.info(f"Task {task_id}: 已删除目标目录中的 conftest.py")
+            except Exception as e:
+                logger.warning(f"Task {task_id}: 删除 conftest.py 失败: {str(e)}")
+
+        if deleted_files:
+            send_message("info", f"✓ 已删除 {len(deleted_files)} 个旧文件: {', '.join(deleted_files)}", "processing")
 
         # 拷贝脚本文件
         script_name = os.path.basename(script_full_path)

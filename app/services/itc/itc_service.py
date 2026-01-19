@@ -1130,9 +1130,9 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
     def _copy_python_scripts_to_target_dir(self) -> str:
         """将工作目录中的 Python 脚本拷贝到目标目录并授权
 
-        拷贝内容：
-        - test 开头的测试脚本（test_*.py）
-        - conftest.py
+        操作步骤：
+        1. 删除目标目录下所有 conftest.py 和 test_ 开头的 .py 文件
+        2. 从工作目录拷贝 test_*.py 和 conftest.py 到目标目录
 
         目标目录：/opt/coder/statistics/build/aigc_tool/{username}/
 
@@ -1140,6 +1140,8 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             str: 目标目录路径
         """
         try:
+            import glob
+
             username = getpass.getuser()
             target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
 
@@ -1147,12 +1149,38 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             os.makedirs(target_dir, exist_ok=True)
             logger.info(f"目标目录已确认: {target_dir}")
 
+            # ========== 第1步：删除目标目录下所有 conftest.py 和 test_ 开头的 .py 文件 ==========
+            deleted_files = []
+            # 查找并删除所有 test_*.py 文件
+            test_pattern = os.path.join(target_dir, "test_*.py")
+            test_files = glob.glob(test_pattern)
+            for file_path in test_files:
+                try:
+                    os.remove(file_path)
+                    deleted_files.append(os.path.basename(file_path))
+                    logger.info(f"已删除目标目录中的测试文件: {os.path.basename(file_path)}")
+                except Exception as e:
+                    logger.warning(f"删除文件失败 {file_path}: {str(e)}")
+
+            # 查找并删除 conftest.py
+            conftest_pattern = os.path.join(target_dir, "conftest.py")
+            if os.path.exists(conftest_pattern):
+                try:
+                    os.remove(conftest_pattern)
+                    deleted_files.append("conftest.py")
+                    logger.info(f"已删除目标目录中的 conftest.py")
+                except Exception as e:
+                    logger.warning(f"删除 conftest.py 失败: {str(e)}")
+
+            if deleted_files:
+                logger.info(f"已删除目标目录中的 {len(deleted_files)} 个旧文件: {', '.join(deleted_files)}")
+
+            # ========== 第2步：从工作目录拷贝文件到目标目录 ==========
             # 获取工作目录
             work_dir = settings.get_work_directory()
             logger.info(f"工作目录: {work_dir}")
 
             # 查找并拷贝 test_*.py 脚本
-            import glob
             test_scripts_pattern = os.path.join(work_dir, "test_*.py")
             test_scripts = glob.glob(test_scripts_pattern)
 
@@ -1191,7 +1219,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             # 设置目标目录权限为 777
             os.chmod(target_dir, 0o777)
 
-            logger.info(f"脚本拷贝完成，共拷贝 {copied_count} 个文件到 {target_dir}")
+            logger.info(f"脚本拷贝完成，已删除 {len(deleted_files)} 个旧文件，已拷贝 {copied_count} 个文件到 {target_dir}")
 
             return target_dir
 
