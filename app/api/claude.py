@@ -1030,7 +1030,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
         # ==============================================
 
         try:
-            result = await itc_service.run_script(itc_request,run_new = True)
+            result = await itc_service.run_script(itc_request, run_new=True)
         except Exception as e:
             logger.error(f"Task {task_id}: ITC run 调用异常: {str(e)}")
             result = {
@@ -1064,14 +1064,11 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
 
 
 
-        # ========== 阶段4: 调用script fix修复脚本 ==========   
-        #判断result_message是否需要进行修复
+        # ========== 阶段4: 调用script fix修复脚本 ==========
+        # 判断result_message是否需要进行修复
         script_fix = False
-        try:
-            if " 执行失败 (错误码:" in result_message:
-                script_fix = True
-        except Exception as e:
-            print("未获取到itc执行结果")
+        if result_message and " 执行失败 (错误码:" in result_message:
+            script_fix = True
         #如果需要修复
         if script_fix:
             logger.info(f"Task {task_id}: 开始修复测试脚本")
@@ -1083,7 +1080,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
             parser.reset_counters()
             message_count = 0
 
-            async for message in stream_fix_script_response(return_msg = result_message,workspace=workspace):
+            async for message in stream_fix_script_response(return_msg=result_message, workspace=workspace):
                 message_count += 1
                 # 使用消息解析器解析消息
                 parsed_info = parser.parse_message(message, stage="测试脚本修复")
@@ -1139,7 +1136,7 @@ async def execute_prompt_pipeline(task_id: str, test_point: str, workspace: str)
             )
 
             try:
-                result = await itc_service.run_script(itc_request, run_new = True)
+                result = await itc_service.run_script(itc_request, run_new=True)
             except Exception as e:
                 logger.error(f"Task {task_id}: ITC run 调用异常: {str(e)}")
                 result = {

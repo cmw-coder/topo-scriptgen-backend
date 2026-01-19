@@ -1127,7 +1127,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         thread.start()
         logger.info(f"后台部署线程已启动: {thread.name}")
 
-    def _copy_python_scripts_to_target_dir(self, run_new = False) -> str:
+    def _copy_python_scripts_to_target_dir(self, run_new: bool = False) -> str:
         """将工作目录中的 Python 脚本拷贝到目标目录并授权
 
         操作步骤：
@@ -1189,26 +1189,42 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
                 newest_file = None
                 newest_time = 0
                 for script_path in test_scripts:
-                    #拼装脚本路径
-                    script_name = os.path.basename(script_path)
-                    target_path = os.path.join(target_dir, script_name)
-                    
                     if os.path.isfile(script_path):
-                        #删除旧脚本
-                        os.remove(target_path)
-                        file_mtime = os.path.getmtime(script_path)
-                        if file_mtime > newest_time:
-                            newest_time = file_mtime
-                            newest_file = script_path
-                #cp最新的文件
-                script_name = os.path.basename(newest_file)
-                target_path = os.path.join(target_dir, script_name)
-                # 拷贝文件
-                shutil.copy2(newest_file, target_path)
-                # 设置权限为可读写（777）
-                os.chmod(target_path, 0o777)
-                logger.info(f"已拷贝测试脚本: {script_name} -> {target_path}")
-                copied_count += 1
+                        try:
+                            file_mtime = os.path.getmtime(script_path)
+                            if file_mtime > newest_time:
+                                newest_time = file_mtime
+                                newest_file = script_path
+                        except Exception as e:
+                            logger.warning(f"获取文件修改时间失败 {script_path}: {str(e)}")
+                            continue
+
+                # 检查是否找到有效的测试脚本文件
+                if newest_file is None:
+                    logger.warning("没有找到有效的测试脚本文件，跳过拷贝")
+                else:
+                    # 拼装脚本路径
+                    script_name = os.path.basename(newest_file)
+                    target_path = os.path.join(target_dir, script_name)
+
+                    # 删除旧脚本（如果存在）
+                    if os.path.exists(target_path):
+                        try:
+                            os.remove(target_path)
+                            logger.info(f"已删除旧的测试脚本: {script_name}")
+                        except Exception as e:
+                            logger.warning(f"删除旧脚本失败 {target_path}: {str(e)}")
+
+                    # 拷贝最新文件
+                    try:
+                        shutil.copy2(newest_file, target_path)
+                        # 设置权限为可读写（777）
+                        os.chmod(target_path, 0o777)
+                        logger.info(f"已拷贝测试脚本: {script_name} -> {target_path}")
+                        copied_count += 1
+                    except Exception as e:
+                        logger.error(f"拷贝文件失败 {newest_file} -> {target_path}: {str(e)}")
+                        raise
             else:           
                 # 拷贝 test 开头的脚本
                 for script_path in test_scripts:
@@ -1251,7 +1267,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             logger.error(f"拷贝 Python 脚本失败: {str(e)}", exc_info=True)
             raise
 
-    async def run_script(self, request: RunScriptRequest, run_new = False) -> Dict[str, Any]:
+    async def run_script(self, request: RunScriptRequest, run_new: bool = False) -> Dict[str, Any]:
         """运行测试脚本"""
         logger.info(f"运行脚本请求 - scriptspath: {request.scriptspath}, executorip: {request.executorip}")
 

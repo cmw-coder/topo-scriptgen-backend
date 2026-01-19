@@ -150,7 +150,7 @@ async def main():
         print(msg) 
 
 
-async def stream_fix_script_response(return_msg: str = "",workspace: str = ""):
+async def stream_fix_script_response(return_msg: str = "", workspace: str = ""):
     if not workspace:
         current_user = getpass.getuser()
         workspace = f"/home/{current_user}/project"
