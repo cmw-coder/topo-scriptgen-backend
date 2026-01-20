@@ -379,26 +379,21 @@ async def restore_configuration(request: ExecutorRequest, background_tasks: Back
     - **executorip**: 执行机IP地址
     """
     try:
-        return BaseResponse(
-            status="ok",
-            message="清除成功",
-            data=""
-        )
-        # result = await itc_service.restore_configuration(request)
+        result = await itc_service.restore_configuration(request)
 
-        # if result.return_code == "200":
-        #     return BaseResponse(
-        #         status="ok",
-        #         message=result.return_info,
-        #         data=result.dict()
-        #     )
-        # elif result.return_code in ["400", "500"]:
-        #     raise HTTPException(
-        #         status_code=500 if result.return_code == "500" else 400,
-        #         detail=result.return_info
-        #     )
-        # else:
-        #     raise HTTPException(status_code=500, detail="未知错误")
+        if result.return_code == "200":
+            return BaseResponse(
+                status="ok",
+                message=result.return_info,
+                data=result.dict()
+            )
+        elif result.return_code in ["400", "500"]:
+            raise HTTPException(
+                status_code=500 if result.return_code == "500" else 400,
+                detail=result.return_info
+            )
+        else:
+            raise HTTPException(status_code=500, detail="未知错误")
 
     except HTTPException:
         raise
