@@ -7,8 +7,33 @@ import shutil
 import connect
 import asyncio
 import resource
+from datetime import datetime
 
 glb_parent_dir=''
+
+
+def debug_log(message):
+    """
+    将调试信息写入当前目录的 debug.log 文件
+    :param message: 要写入的调试信息字符串
+    """
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    debug_file = os.path.join(root_dir, 'debug.log')
+
+    try:
+        # 获取当前时间，格式为：年-月-日 时:分:秒
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 拼接日志内容：时间 + 调试信息
+        log_content = f"[{current_time}] {message}\n"
+
+        # 以追加模式打开文件（a），指定UTF-8编码避免中文乱码
+        with open(debug_file, "a", encoding="utf-8") as f:
+            f.write(log_content)
+            
+    except Exception as e:
+        # 捕获文件操作异常，方便排查问题
+        print(f"写入调试日志失败：{e}")
+
 
 def extract_and_merge_commands(py_file_content: str) -> list:
     """
@@ -783,6 +808,59 @@ def parse_py_func(file):
     return func_dict
 
 
+def save_history_file(root_dir, files_to_copy):
+    """
+    在revert_history目录下创建毫秒级时间戳命名的文件夹，并复制指定3个文件到该文件夹
+    
+    Args:
+        root_dir: 回写脚本所在目录
+        files_to_copy: 拷贝文件列表
+    """
+    # ------------------- 核心修改：配置你的X目录 -------------------
+    # 把下面这行的路径改成你要的X目录（Windows用\\或/，Linux用/）
+    # 示例：
+    # Windows：target_root_dir = "D:\\history_files"  或 "D:/history_files"
+    # Linux/Mac：target_root_dir = "/home/user/history_files"
+    # 确保路径是绝对路径
+    if not os.path.isabs(root_dir):
+        root_dir = os.path.abspath(root_dir)
+
+    target_dir = f"{root_dir}/../revert_history"
+
+    debug_log(f"root_dir = {root_dir}, revert_history = {target_dir}")
+
+    # 1. 生成毫秒级时间戳文件夹名（格式：年-月-日-时-分-秒-毫秒）
+    current_time = datetime.now()
+    folder_name = current_time.strftime("%Y-%m-%d-%H-%M-%S-%f")
+    
+    # 2. 拼接目录 + 时间戳文件夹的完整路径（跨Windows/Linux通用）
+    folder_path = os.path.join(target_dir, folder_name)
+    
+    try:
+        # 3. 创建X目录（如果不存在的话）+ 时间戳子文件夹
+        # exist_ok=True：目录已存在也不会报错，避免手动创建X目录的麻烦
+        os.makedirs(target_dir, exist_ok=True)
+        os.makedirs(folder_path, exist_ok=True)
+        print(f"✅ 文件夹创建成功：{folder_path}")
+        
+        # 4. 批量复制文件到时间戳文件夹
+        for file in files_to_copy:
+            if not file:  # 跳过空路径
+                print(f"⚠️ 跳过空文件路径")
+                continue
+            if not os.path.exists(file):  # 检查文件是否存在
+                print(f"❌ 文件不存在，跳过复制：{file}")
+                continue
+            # copy2保留文件的创建/修改时间等元数据，比单纯copy更友好
+            shutil.copy2(file, folder_path)
+            print(f"✅ 复制成功：{file} → {folder_path}")
+    
+    except PermissionError:
+        print(f"❌ 权限不足，无法创建文件夹/复制文件：{folder_path}")
+    except Exception as e:
+        print(f"❌ 操作失败：{str(e)}")
+
+
 def command_to_func(test_script, new_command, old_command, diff_command_list):
     """
     处理差异函数，生成修改前后的命令文件，调用connect.py并替换测试脚本中的同名函数
@@ -872,60 +950,9 @@ def command_to_func(test_script, new_command, old_command, diff_command_list):
         func_dict = parse_py_func(func_py_path)
         update_func(test_script, func_dict)
 
-'''
-        # 解析function.py，提取目标函数的代码
-        with open(func_py_path, "r", encoding="utf-8") as f:
-            func_py_content = f.read()
-        # 使用ast模块解析Python代码（更安全的函数提取方式）
-        try:
-            tree = ast.parse(func_py_content)
-            target_func_code = None
-            # 遍历AST节点，找到目标函数
-            for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef) and node.name == func_name:
-                    # 提取函数的起始和结束位置
-                    start_line = node.lineno - 1  # ast的行号从1开始，列表从0开始
-                    end_line = node.end_lineno  # 需要Python 3.8+支持
-                    # 按行拆分代码，提取函数体
-                    func_lines = func_py_content.split("\n")[start_line:end_line]
-                    target_func_code = "\n".join(func_lines)
-                    break
-            if not target_func_code:
-                print(f"警告：{func_py_path} 中未找到函数 {func_name}，跳过替换")
-                continue
-        except Exception as e:
-            print(f"解析function.py失败：{e}，跳过函数替换")
-            continue
-        
-        # 5.2 读取并替换test_script中的同名函数
-        with open(test_script, "r", encoding="utf-8") as f:
-            test_lines = f.read().split("\n")
-        
-        # 查找test_script中目标函数的位置并替换
-        new_test_lines = []
-        in_target_func = False
-        func_started = False
-        for line in test_lines:
-            # 检测函数定义行（def func_name(...):）
-            if line.strip().startswith(f"def {func_name}("):
-                in_target_func = True
-                func_started = True
-                # 添加新的函数代码
-                new_test_lines.extend(target_func_code.split("\n"))
-                continue
-            # 退出函数体（遇到下一个def或文件结束）
-            if in_target_func and line.strip().startswith("def ") and not func_started:
-                in_target_func = False
-            # 非目标函数行直接保留
-            if not in_target_func:
-                new_test_lines.append(line)
-        
-        # 5.3 保存修改后的测试脚本
-        with open(test_script, "w", encoding="utf-8") as f:
-            f.write("\n".join(new_test_lines))
-        
-        print(f"函数 {func_name} 处理完成：已生成前后文件，调用connect.py，并替换test_script中的同名函数")
-'''
+        # 保存历史文件，方便定位问题
+        files_to_copy = [test_script, before_file, after_file, func_py_path]
+        save_history_file(glb_parent_dir, files_to_copy)
 
 
 # 回写py文件，仅更新有差异的函数
@@ -945,14 +972,8 @@ def write_back_diff_func(script_file, old_command_file, new_command_file):
     # 创建目录
     os.makedirs(revert_path, exist_ok=True)  # 不存在则创建，存在则不报错
 
-    # 生成原始文件备份，方便调试对比
-    # copy_file_manually(script_file, f"{revert_path}/prototype_script.py")
-
     # 有差异的函数重新生成
     command_to_func(script_file, new_command_dict, old_command_dict, diff_func_list)
-
-    # 更新有差异的函数
-    #update_func(script_file, diff_func_dict)
 
 
 # 检查文件是否存在
