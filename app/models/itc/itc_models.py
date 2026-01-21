@@ -29,6 +29,10 @@ class RunScriptRequest(BaseModel):
     scriptspath: str = Field(..., description="脚本文件目录，一般是svn目录")
     executorip: str = Field(..., description="执行机IP，运行脚本的执行机IP地址")
 
+class RunSingleScriptRequest(BaseModel):
+    """运行单个脚本请求模型"""
+    script_path: str = Field(..., description="要运行的脚本文件名（如 conftest.py）")
+
 class ExecutorRequest(BaseModel):
     """执行机操作请求模型（用于undeploy、restoreconfiguration、suspend、resume）"""
     executorip: str = Field(..., description="执行机IP，运行脚本的执行机IP地址")
@@ -123,6 +127,7 @@ class ItcResultResponse(BaseModel):
 __all__ = [
     "DeployRequest",
     "RunScriptRequest",
+    "RunSingleScriptRequest",
     "ExecutorRequest",
     "TerminalInfo",
     "DeployResult",

@@ -3,6 +3,7 @@ from typing import Optional
 from app.models.itc.itc_models import (
     NewDeployRequest,
     RunScriptRequest,
+    RunSingleScriptRequest,
     ExecutorRequest,
     RunScriptResponse,
     SimpleResponse,
@@ -196,17 +197,20 @@ async def read_file_or_directory(
 
 
 @router.post("/run", response_model=BaseResponse)
-async def run_script():
+async def run_script(request: RunSingleScriptRequest):
     """
-    运行测试脚本（无需参数，使用固定配置）
+    运行测试脚本
+
+    请求参数（JSON Body）：
+    - **script_path**: 要运行的脚本文件名（如 conftest.py、test_xxx.py）
 
     自动使用：
-    - scriptspath: 固定路径 /opt/coder/statistics/build/aigc_tool/{username}
+    - scriptspath: 固定路径 //10.144.41.149/webide/aigc_tool/{username}
     - executorip: 从部署的设备列表中自动获取
 
     在运行前会自动：
-    - 删除目标目录下所有 conftest.py 和 test_ 开头的 .py 文件
-    - 将工作目录中所有 test 开头的 .py 文件和 conftest.py 拷贝到目标目录
+    - 删除目标目录下所有 test_*.py 和 conftest.py 文件
+    - 拷贝 conftest.py（如果存在）和用户指定的脚本文件到目标目录
     - 设置目录权限为 755，文件权限为 644
     """
     try:
@@ -240,9 +244,27 @@ async def run_script():
         # 确保目标目录存在
         os.makedirs(target_dir, exist_ok=True)
 
-        # ========== 第1步：删除目标目录下所有 conftest.py 和 test_ 开头的 .py 文件 ==========
+        # 获取请求的脚本路径
+        script_path = request.script_path
+
+        # 构建源文件的完整路径
+        if os.path.isabs(script_path):
+            source_file = script_path
+        else:
+            source_file = os.path.join(work_dir, script_path)
+
+        # 检查源文件是否存在
+        if not os.path.exists(source_file):
+            raise HTTPException(
+                status_code=404,
+                detail=f"脚本文件不存在: {source_file}"
+            )
+
+        # 获取文件名
+        script_filename = os.path.basename(source_file)
+
+        # ========== 第1步：删除目标目录下所有 conftest.py 和 test_*.py 文件 ==========
         deleted_files = []
-        # 查找并删除所有 test_*.py 文件
         test_pattern = os.path.join(target_dir, "test_*.py")
         test_files = glob.glob(test_pattern)
         for file_path in test_files:
@@ -253,7 +275,6 @@ async def run_script():
             except Exception as e:
                 logger.warning(f"删除文件失败 {file_path}: {str(e)}")
 
-        # 查找并删除所有 conftest.py 文件
         conftest_pattern = os.path.join(target_dir, "conftest.py")
         if os.path.exists(conftest_pattern):
             try:
@@ -266,53 +287,47 @@ async def run_script():
         if deleted_files:
             logger.info(f"已删除目标目录中的 {len(deleted_files)} 个文件: {', '.join(deleted_files)}")
 
-        # ========== 第2步：拷贝项目目录下的文件到共享目录 ==========
-        # 查找所有需要拷贝的文件：
-        # 1. 工作目录下所有 test 开头的 .py 文件
-        # 2. 工作目录下的 conftest.py
-        test_pattern = os.path.join(work_dir, "test*.py")
-        conftest_path = os.path.join(work_dir, "conftest.py")
+        # ========== 第2步：拷贝 conftest.py 和用户指定的脚本文件 ==========
+        # 设置目录权限为 755 (rwxr-xr-x)
+        try:
+            os.chmod(target_dir, 0o755)
+        except Exception as e:
+            logger.warning(f"设置目标目录权限失败: {str(e)}")
 
-        test_files = glob.glob(test_pattern)
-        files_to_copy = list(test_files)  # 复制列表
+        copied_files = []
 
-        # 如果 conftest.py 存在，添加到拷贝列表
-        if os.path.exists(conftest_path):
-            files_to_copy.append(conftest_path)
+        # 拷贝用户指定的脚本文件
+        dst_script_file = os.path.join(target_dir, script_filename)
+        shutil.copy2(source_file, dst_script_file)
+        try:
+            os.chmod(dst_script_file, 0o644)
+        except Exception as e:
+            logger.warning(f"设置文件权限失败 {script_filename}: {str(e)}")
+        copied_files.append(script_filename)
+        logger.info(f"已拷贝脚本文件: {script_filename} -> {dst_script_file}")
 
-        # 拷贝文件到目标目录
-        if files_to_copy:
-            # 设置目录权限为 755 (rwxr-xr-x)
+        # 查找并拷贝 conftest.py
+        conftest_source = os.path.join(work_dir, "conftest.py")
+        if os.path.exists(conftest_source) and script_filename != "conftest.py":
+            dst_conftest = os.path.join(target_dir, "conftest.py")
+            shutil.copy2(conftest_source, dst_conftest)
             try:
-                os.chmod(target_dir, 0o755)
+                os.chmod(dst_conftest, 0o644)
             except Exception as e:
-                logger.warning(f"设置目标目录权限失败: {str(e)}")
+                logger.warning(f"设置文件权限失败 conftest.py: {str(e)}")
+            copied_files.append("conftest.py")
+            logger.info(f"已拷贝 conftest.py -> {dst_conftest}")
 
-            copied_files = []
-            for src_file in files_to_copy:
-                filename = os.path.basename(src_file)
-                dst_file = os.path.join(target_dir, filename)
-                shutil.copy2(src_file, dst_file)
-                # 设置文件权限为 644 (rw-r--r--)
-                try:
-                    os.chmod(dst_file, 0o644)
-                except Exception as e:
-                    logger.warning(f"设置文件权限失败 {filename}: {str(e)}")
-                copied_files.append(filename)
-
-            # 返回时包含拷贝的文件信息
-            copy_info = f"已删除 {len(deleted_files)} 个旧文件，已拷贝 {len(copied_files)} 个文件: {', '.join(copied_files)}"
-        else:
-            copy_info = f"已删除 {len(deleted_files)} 个旧文件，未找到需要拷贝的测试文件"
+        copy_info = f"已删除 {len(deleted_files)} 个旧文件，已拷贝 {len(copied_files)} 个文件: {', '.join(copied_files)}"
 
         # 构造请求
-        from app.models.itc.itc_models import RunScriptRequest
-        request = RunScriptRequest(
+        from app.models.itc.itc_models import RunScriptRequest as ItcRunRequest
+        itc_request = ItcRunRequest(
             scriptspath=f"//10.144.41.149/webide/aigc_tool/{username}",
             executorip=executorip
         )
 
-        result = await itc_service.run_script(request)
+        result = await itc_service.run_script(itc_request)
 
         if result.get("return_code") == "200":
             return BaseResponse(
