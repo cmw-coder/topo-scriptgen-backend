@@ -11,6 +11,97 @@ from datetime import datetime
 
 glb_parent_dir=''
 
+def replace_setup_teardown(file_path):
+    """
+    替换文件中的特定字符串（非conftest.py文件生效）
+    
+    参数:
+        file_path: 目标文件的路径（可以是相对路径或绝对路径）
+    """
+    # 提取文件名（处理带路径的情况，比如 ./test_dir/test.py 只取 test.py）
+    file_name = os.path.basename(file_path)
+    
+    # 仅处理非conftest.py的文件
+    if 'conftest' not in file_name:
+        try:
+            # 以读写模式打开文件（encoding='utf-8' 避免中文乱码）
+            with open(file_path, 'r+', encoding='utf-8') as f:
+                # 读取文件全部内容
+                content = f.read()
+                
+                # 执行字符串替换
+                modified_content = content.replace('!!!func setup', '!!!func setup_class')
+                modified_content = modified_content.replace('!!!func teardown', '!!!func teardown_class')
+                
+                # 如果内容有变化，才写回文件（避免无意义的文件修改）
+                if modified_content != content:
+                    # 将文件指针移到开头
+                    f.seek(0)
+                    # 写入修改后的内容
+                    f.write(modified_content)
+                    # 截断文件（防止原文件内容比新内容长，残留旧内容）
+                    f.truncate()
+                    print(f"文件 {file_path} 已完成替换操作")
+                else:
+                    print(f"文件 {file_path} 无需替换（未找到目标字符串）")
+        
+        except FileNotFoundError:
+            print(f"错误：文件 {file_path} 不存在")
+        except PermissionError:
+            print(f"错误：没有权限访问文件 {file_path}")
+        except Exception as e:
+            print(f"处理文件 {file_path} 时发生未知错误：{str(e)}")
+    else:
+        print(f"跳过文件 {file_path}（是conftest.py，不执行替换）")
+
+
+def repair_func_indent(file_path):
+    """
+    极简版：修复单函数文件缩进（第一行是def行，目标4空格缩进）
+    若def行已为4空格缩进，直接退出无需调整
+    :param file_path: 文件路径（如'a.py'）
+    :return: None
+    """
+    try:
+        # 1. 读取文件，tab统一转为4个空格
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = [line.replace('\t', '    ') for line in f.readlines()]
+        
+        if not lines:  # 空文件处理
+            print("⚠️ 文件为空，无需调整")
+            return
+        
+        # 2. 计算第一行（def行）原有缩进
+        first_line = lines[0]
+        old_indent = len(first_line) - len(first_line.lstrip())
+        
+        # 核心新增：缩进已为4则直接退出
+        if old_indent == 4:
+            print(f"✅ {file_path} 函数缩进已为4个空格，无需调整")
+            return
+        
+        # 3. 计算缩进调整量并统一调整所有行
+        indent_delta = 4 - old_indent
+        repaired_lines = []
+        for line in lines:
+            if not line.strip():  # 空行直接保留
+                repaired_lines.append(line)
+                continue
+            current_indent = len(line) - len(line.lstrip())
+            new_indent = max(0, current_indent + indent_delta)
+            repaired_lines.append(' ' * new_indent + line.lstrip())
+        
+        # 4. 写回文件
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(repaired_lines)
+        
+        print(f"✅ {file_path} 缩进修复完成！调整量：{indent_delta} 个空格")
+    
+    except FileNotFoundError:
+        print(f"❌ 文件 {file_path} 不存在")
+    except Exception as e:
+        print(f"❌ 处理出错：{str(e)}")
+
 
 def debug_log(message):
     """
@@ -947,6 +1038,10 @@ def command_to_func(test_script, new_command, old_command, diff_command_list):
             print(f"警告：{func_py_path} 不存在，跳过函数替换")
             continue
 
+        # 修复缩进
+        repair_func_indent(func_py_path)
+
+        # 更新函数
         func_dict = parse_py_func(func_py_path)
         update_func(test_script, func_dict)
 
@@ -1287,8 +1382,12 @@ def main():
         except Exception as e:
             print(f"mapping.json写入失败：{e}")
     
-    # 把file3中的return还原为ctrl+z
+    # 把return还原为ctrl+z
+    replace_return_with_ctrlz_by_file(file2)
     replace_return_with_ctrlz_by_file(file3)
+
+    # itc日志会把setup_class转为setup, teardown_class转为teardown, 此处转回去
+    replace_setup_teardown(temp_path)
 
     # 更新差异函数
     write_back_diff_func(temp_path, file2, file3)

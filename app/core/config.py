@@ -65,7 +65,7 @@ class Settings:
 
     # ITC 相关设置
     ITC_SERVER_URL: str = "http://10.111.8.68:8000/aigc"
-    ITC_REQUEST_TIMEOUT: int = 600  # 10分钟超时（部署可能需要较长时间）
+    ITC_REQUEST_TIMEOUT: int = 1200  # 10分钟超时（部署可能需要较长时间）
 
     # Script command extract 相关设置
     @classmethod
