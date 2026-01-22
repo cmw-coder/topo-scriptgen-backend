@@ -148,14 +148,13 @@ class ExtractCommandAgent(object):
 
     def get_log_command_info(self) -> Dict[str, str]:
         """
-        获取日志文件中的命令信息
+        获取日志文件中的命令信息（优化版：单次遍历，避免重复 IO）
 
         处理流程：
         1. 验证输入路径是否为目录
         2. 创建临时目录用于存放解码后的文件
-        3. 递归扫描并处理所有 .pytestlog.json 文件
-        4. 使用 LOGPROCESS 处理解码后的文件
-        5. 返回提取的命令信息
+        3. 单次遍历：解码文件 + 直接提取脚本名（避免第二次 os.walk）
+        4. 返回提取的命令信息
 
         Returns:
             Dict[str, str]: 文件名到命令信息的映射字典
@@ -163,6 +162,9 @@ class ExtractCommandAgent(object):
         Raises:
             Exception: 当目录创建失败或文件处理失败时
         """
+        import time
+        start_time = time.time()
+
         # 1. 验证输入路径
         if not os.path.isdir(self.input_path):
             print(f"这不是一个文件夹: {self.input_path}")
@@ -170,24 +172,35 @@ class ExtractCommandAgent(object):
 
         # 2. 创建临时目录
         folder_name = "local"
-        current_dir = os.getcwd()  # 获取当前目录
+        current_dir = os.getcwd()
         folder_path = os.path.join(current_dir, folder_name)
 
         try:
-            os.makedirs(folder_path, exist_ok=True)  # 使用 os.makedirs
+            # 清理并重建临时目录，确保使用最新数据
+            import shutil
+            if os.path.exists(folder_path):
+                shutil.rmtree(folder_path, ignore_errors=True)
+            os.makedirs(folder_path, exist_ok=True)
             absolute_path = os.path.abspath(folder_path)
-            print(f"文件夹已创建/确认存在: {absolute_path}")
+            print(f"临时目录已重建: {absolute_path}")
         except Exception as e:
             print(f"创建文件夹失败: {e}")
             import traceback
             traceback.print_exc()
             return {}
 
-        # 3. 递归扫描并处理所有 .pytestlog.json 文件
+        # 存储解码后的文件信息：{script_name: output_file_path}
+        decoded_files = {}
+        conftest_setup = None
+        conftest_teardown = None
+
+        # 3. 单次遍历：解码文件 + 提取脚本名
         try:
+            file_count = 0
             for root, dirs, files in os.walk(self.input_path):
                 for file in files:
                     if file.endswith('.pytestlog.json'):
+                        file_count += 1
                         input_file = os.path.join(root, file)
                         filename = os.path.basename(file)
                         output_file = os.path.join(folder_path, filename)
@@ -197,9 +210,19 @@ class ExtractCommandAgent(object):
                         decode_data = decode_processor.process()
 
                         if decode_data:
-                            print(f"成功解码文件: {filename}")
+                            # 直接从解码数据中提取脚本名，避免再次读取文件
+                            script_name = self._extract_script_name(decode_data)
+                            if script_name == "setup":
+                                conftest_setup = output_file
+                            elif script_name == "teardown":
+                                conftest_teardown = output_file
+                            else:
+                                decoded_files[script_name] = output_file
+                            print(f"解码: {filename} -> {script_name}")
                         else:
                             print(f"警告: 解码文件失败: {filename}")
+
+            print(f"共解码 {file_count} 个文件，耗时 {time.time() - start_time:.2f}s")
 
         except Exception as e:
             print(f"扫描或解码文件时出错: {e}")
@@ -207,30 +230,48 @@ class ExtractCommandAgent(object):
             traceback.print_exc()
             return {}
 
-        # 4. 使用 LOGPROCESS 处理解码后的文件
+        # 4. 处理解码后的文件（不再使用 os.walk）
         try:
-            log_processor = LOGPROCESS(folder_path)
-            log_command_info = log_processor.log_file_process()
+            log_command_info = {}
+
+            # 处理普通测试脚本
+            for script_name, output_file in decoded_files.items():
+                log_processor = LOGPROCESS(folder_path)
+                splice_res = log_processor.output_command_file(output_file)
+                log_command_info[script_name] = splice_res
+
+            # 处理 conftest.py
+            if conftest_setup or conftest_teardown:
+                log_processor = LOGPROCESS(folder_path)
+                splice_res = log_processor.conftest_log_process(conftest_setup, conftest_teardown)
+                if splice_res:
+                    log_command_info["conftest.py"] = splice_res
 
             if log_command_info:
-                print(f"成功提取命令信息，共 {len(log_command_info)} 个文件")
-                # 打印获取的文件名列表
-                print("=" * 60)
-                print("获取的文件名列表:")
-                print("=" * 60)
-                for idx, filename in enumerate(log_command_info.keys(), 1):
-                    print(f"  {idx}. {filename}")
-                print("=" * 60)
+                print(f"成功提取命令信息，共 {len(log_command_info)} 个文件，总耗时 {time.time() - start_time:.2f}s")
             else:
                 print("警告: 未能提取到命令信息")
 
-            return log_command_info if log_command_info else {}
+            return log_command_info
 
         except Exception as e:
             print(f"处理日志文件时出错: {e}")
             import traceback
             traceback.print_exc()
             return {}
+
+    def _extract_script_name(self, decode_data: Any) -> str:
+        """从解码后的 JSON 数据中提取脚本名"""
+        try:
+            if isinstance(decode_data, dict):
+                for value in decode_data.values():
+                    if isinstance(value, dict) and "Title" in value:
+                        title_list = value["Title"]
+                        if isinstance(title_list, list) and title_list:
+                            return title_list[-1]
+        except Exception:
+            pass
+        return os.path.basename(self.input_path)
 
 
 def _load_default_script_mapping():
