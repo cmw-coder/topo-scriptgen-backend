@@ -153,7 +153,7 @@ class ExtractCommandAgent(object):
         处理流程：
         1. 验证输入路径是否为目录
         2. 创建临时目录用于存放解码后的文件
-        3. 单次遍历：解码文件 + 直接提取脚本名（避免第二次 os.walk）
+        3. 单次遍历：解码文件，并使用 output_command_file 提取脚本名和命令
         4. 返回提取的命令信息
 
         Returns:
@@ -189,14 +189,15 @@ class ExtractCommandAgent(object):
             traceback.print_exc()
             return {}
 
-        # 存储解码后的文件信息：{script_name: output_file_path}
-        decoded_files = {}
-        conftest_setup = None
-        conftest_teardown = None
+        log_command_info = {}
+        conftest_setup_file = None
+        conftest_teardown_file = None
 
-        # 3. 单次遍历：解码文件 + 提取脚本名
+        # 3. 单次遍历：解码文件 + 直接提取命令信息
         try:
             file_count = 0
+            log_processor = LOGPROCESS(folder_path)
+
             for root, dirs, files in os.walk(self.input_path):
                 for file in files:
                     if file.endswith('.pytestlog.json'):
@@ -210,15 +211,20 @@ class ExtractCommandAgent(object):
                         decode_data = decode_processor.process()
 
                         if decode_data:
-                            # 直接从解码数据中提取脚本名，避免再次读取文件
-                            script_name = self._extract_script_name(decode_data)
+                            # 使用 output_command_file 直接提取命令（内部会读取文件获取正确的脚本名）
+                            splice_res = log_processor.output_command_file(output_file)
+                            # 从 splice_res 中提取脚本名（output_command_file 内部会读取文件获取）
+                            script_name = log_processor.get_script_name(output_file)
+
                             if script_name == "setup":
-                                conftest_setup = output_file
+                                conftest_setup_file = output_file
                             elif script_name == "teardown":
-                                conftest_teardown = output_file
+                                conftest_teardown_file = output_file
+                            elif script_name:  # 确保有有效的脚本名
+                                log_command_info[script_name] = splice_res
+                                print(f"解码: {filename} -> {script_name}")
                             else:
-                                decoded_files[script_name] = output_file
-                            print(f"解码: {filename} -> {script_name}")
+                                print(f"警告: 无法从 {filename} 提取脚本名")
                         else:
                             print(f"警告: 解码文件失败: {filename}")
 
@@ -230,25 +236,16 @@ class ExtractCommandAgent(object):
             traceback.print_exc()
             return {}
 
-        # 4. 处理解码后的文件（不再使用 os.walk）
+        # 4. 处理 conftest.py（合并 setup 和 teardown）
         try:
-            log_command_info = {}
-
-            # 处理普通测试脚本
-            for script_name, output_file in decoded_files.items():
-                log_processor = LOGPROCESS(folder_path)
-                splice_res = log_processor.output_command_file(output_file)
-                log_command_info[script_name] = splice_res
-
-            # 处理 conftest.py
-            if conftest_setup or conftest_teardown:
-                log_processor = LOGPROCESS(folder_path)
-                splice_res = log_processor.conftest_log_process(conftest_setup, conftest_teardown)
+            if conftest_setup_file or conftest_teardown_file:
+                splice_res = log_processor.conftest_log_process(conftest_setup_file, conftest_teardown_file)
                 if splice_res:
                     log_command_info["conftest.py"] = splice_res
 
             if log_command_info:
                 print(f"成功提取命令信息，共 {len(log_command_info)} 个文件，总耗时 {time.time() - start_time:.2f}s")
+                print(f"映射键列表: {list(log_command_info.keys())}")
             else:
                 print("警告: 未能提取到命令信息")
 
@@ -259,19 +256,6 @@ class ExtractCommandAgent(object):
             import traceback
             traceback.print_exc()
             return {}
-
-    def _extract_script_name(self, decode_data: Any) -> str:
-        """从解码后的 JSON 数据中提取脚本名"""
-        try:
-            if isinstance(decode_data, dict):
-                for value in decode_data.values():
-                    if isinstance(value, dict) and "Title" in value:
-                        title_list = value["Title"]
-                        if isinstance(title_list, list) and title_list:
-                            return title_list[-1]
-        except Exception:
-            pass
-        return os.path.basename(self.input_path)
 
 
 def _load_default_script_mapping():
