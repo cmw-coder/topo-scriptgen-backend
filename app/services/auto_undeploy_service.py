@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class AutoUndeployService:
     """自动卸载服务
 
-    定期检查最后一次 API 调用时间，如果超过 4 小时未调用且处于已部署状态，
+    定期检查最后一次 API 调用时间，如果超过 8 小时未调用且处于已部署状态，
     则自动调用 undeploy 接口卸载组网并清理配置。
     """
 
@@ -19,7 +19,7 @@ class AutoUndeployService:
     CHECK_INTERVAL = 1200  # 20分钟检查一次
 
     # 自动卸载的超时时间（小时）
-    AUTO_UNDEPLOY_TIMEOUT_HOURS = 4
+    AUTO_UNDEPLOY_TIMEOUT_HOURS = 8
 
     def __init__(self):
         self._running = False
