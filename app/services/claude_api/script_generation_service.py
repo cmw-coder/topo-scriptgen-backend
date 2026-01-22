@@ -207,7 +207,7 @@ class ScriptGenerationService:
             self._send_message(task_id, "info", "===== 第3步：执行脚本回写 =====", "processing")
 
             # 导入 command_write_back 模块
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../services/claude/process_script_write_back"))
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../claude/process_script_write_back"))
             import command_write_back
 
             # 保存旧的 sys.argv
