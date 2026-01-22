@@ -2,12 +2,18 @@
 任务日志管理服务
 
 负责任务日志文件的创建、写入和管理
+
+性能优化：
+1. 启动时一次性加载所有已有文件的缓存
+2. 缓存命中时直接返回，不做任何文件系统检查（O(1)）
+3. 缓存未命中时才使用 glob 搜索（多进程场景下的慢速路径）
 """
 import os
 import logging
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
+from threading import Lock
 
 
 class TaskLogger:
@@ -17,12 +23,25 @@ class TaskLogger:
         self.logger = logging.getLogger(__name__)
         # 缓存 task_id 到日志文件名的映射，确保同一任务的日志写入同一文件
         self._log_file_cache: dict[str, str] = {}
+        # 线程锁，防止并发时重复创建文件
+        self._lock = Lock()
+        # 缓存 task_logs_dir 路径，避免重复获取
+        self._task_logs_dir: Optional[Path] = None
         # 启动时加载已有日志文件的缓存
         self._load_cache()
 
+    def _get_task_logs_dir(self) -> Path:
+        """获取日志目录（带缓存）"""
+        if self._task_logs_dir is None:
+            from app.core.path_manager import path_manager
+            logs_dir = path_manager.get_logs_dir()
+            self._task_logs_dir = logs_dir / "tasks"
+            self._task_logs_dir.mkdir(parents=True, exist_ok=True)
+        return self._task_logs_dir
+
     def _load_cache(self):
         """
-        启动时从已有日志文件中加载缓存
+        启动时从已有日志文件中加载缓存（一次性操作）
         扫描日志目录，解析文件名格式：年月日时分秒_taskId.log
         恢复 task_id 到文件名的映射
         """
@@ -37,24 +56,25 @@ class TaskLogger:
             if not task_logs_dir.exists():
                 return
 
-            # 扫描所有 .log 文件
+            # 扫描所有 .log 文件（一次性操作）
             pattern = str(task_logs_dir / "*.log")
             log_files = glob.glob(pattern)
 
             loaded_count = 0
+            new_cache = {}
             for log_file_path in log_files:
                 filename = os.path.basename(log_file_path)
-                # 解析文件名：年月日时分秒_taskId.log
-                # 提取 task_id（去掉前14位时间戳和下划线，去掉 .log 后缀）
                 if filename.endswith('.log'):
                     # 文件名格式：20260122194648_taskId.log
-                    # 第14位是下划线，所以从第15位开始到 .log 之前是 task_id
                     parts = filename.split('_', 1)
                     if len(parts) == 2:
                         task_id_from_file = parts[1].removesuffix('.log')
-                        # 缓存文件名（带时间戳前缀）
-                        self._log_file_cache[task_id_from_file] = filename
+                        new_cache[task_id_from_file] = filename
                         loaded_count += 1
+
+            # 一次性更新缓存（减少锁持有时间）
+            with self._lock:
+                self._log_file_cache = new_cache
 
             if loaded_count > 0:
                 self.logger.info(f"TaskLogger: 加载了 {loaded_count} 个日志文件缓存")
@@ -64,9 +84,14 @@ class TaskLogger:
 
     def get_log_file_path(self, task_id: str) -> str:
         """
-        获取任务日志文件路径
+        获取任务日志文件路径（性能优化版）
+
         文件名格式：年月日时分秒_taskId.log
         例如：20250122143025_abc123-def456.log
+
+        性能：
+        - 缓存命中：O(1)，无文件系统操作
+        - 缓存未命中：glob 搜索（仅发生一次，之后被缓存）
 
         Args:
             task_id: 任务ID
@@ -74,24 +99,40 @@ class TaskLogger:
         Returns:
             日志文件的完整路径
         """
-        from app.core.path_manager import path_manager
+        task_logs_dir = self._get_task_logs_dir()
 
-        logs_dir = path_manager.get_logs_dir()
-        # 创建任务日志子目录
-        task_logs_dir = logs_dir / "tasks"
-        task_logs_dir.mkdir(parents=True, exist_ok=True)
+        # 快速路径：缓存命中，直接返回（无锁，无文件系统检查）
+        # 使用 try/except 避免 KeyError 异常的开销
+        cached_filename = self._log_file_cache.get(task_id)
+        if cached_filename is not None:
+            return str(task_logs_dir / cached_filename)
 
-        # 如果缓存中存在，直接返回
-        if task_id in self._log_file_cache:
-            return str(task_logs_dir / self._log_file_cache[task_id])
+        # 慢速路径：缓存未命中，需要搜索文件系统
+        # 使用锁保护，防止并发时重复创建
+        with self._lock:
+            # 双重检查：可能在等待锁时已被其他线程设置
+            cached_filename = self._log_file_cache.get(task_id)
+            if cached_filename is not None:
+                return str(task_logs_dir / cached_filename)
 
-        # 首次调用，生成文件名并缓存
-        # 文件名格式：年月日时分秒_taskId.log
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        log_filename = f"{timestamp}_{task_id}.log"
-        self._log_file_cache[task_id] = log_filename
+            # 从文件系统查找已有的日志文件（多进程场景：其他进程创建的文件）
+            import glob
+            pattern = str(task_logs_dir / f"*_{task_id}.log")
+            existing_files = glob.glob(pattern)
 
-        return str(task_logs_dir / log_filename)
+            if existing_files:
+                # 找到已有的日志文件，使用最新的（按文件名排序）
+                existing_files.sort(reverse=True)
+                existing_filename = os.path.basename(existing_files[0])
+                self._log_file_cache[task_id] = existing_filename
+                return str(existing_files[0])
+
+            # 没有找到已有文件，创建新文件并缓存
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            log_filename = f"{timestamp}_{task_id}.log"
+            self._log_file_cache[task_id] = log_filename
+
+            return str(task_logs_dir / log_filename)
 
     def write_log(self, task_id: str, content: str):
         """
