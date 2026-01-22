@@ -50,8 +50,17 @@ class WorkflowMetrics(BaseModel):
     # Claude SDK 分析指标（从 Claude 项目日志目录分析获取）
     claude_analysis_metrics: Optional[dict] = Field(None, description="Claude SDK分析的Todo指标数据")
 
-    # 命令行调试指标（记录用户调试脚本的时间）
-    command_debug_metrics: Optional[dict] = Field(None, description="命令行调试指标数据")
+    # 命令行调试指标（按文件记录调试时间）
+    command_debug_metrics: Optional[dict] = Field(None, description="命令行调试指标数据（按文件记录）")
+
+    # 写脚本时间指标（按文件记录）
+    write_script_metrics: Optional[dict] = Field(None, description="写脚本时间指标数据（按文件记录）")
+
+    # 总调试/写脚本时间（秒）- command_debug_metrics 和 write_script_metrics 所有文件的总和
+    total_debug_duration: Optional[float] = Field(None, description="总调试/写脚本时间（秒）- 所有文件的 command_debug 和 write_script 总和")
+
+    # Web使用时间（秒）
+    keep_alive_duration: Optional[float] = Field(None, description="Web使用总时长（秒）")
 
     # 流程创建时间
     created_at: datetime = Field(default_factory=datetime.now, description="流程创建时间")
@@ -67,7 +76,10 @@ class MetricsPushRequest(BaseModel):
     """指标推送请求模型"""
 
     # 类型
-    type: str = Field(..., description="指标类型: command_debug")
+    type: str = Field(..., description="指标类型: command_debug(命令行调试) | keep_alive(Web使用时间) | write_script(写脚本时间)")
 
-    # 文件名
-    file_name: str = Field(..., description="调试的脚本文件名")
+    # 文件名（command_debug 和 write_script 类型需要）
+    file_name: Optional[str] = Field(None, description="脚本文件名（command_debug 和 write_script 类型必需）")
+
+    # 操作耗时（秒）
+    interval: Optional[float] = Field(None, description="用户操作耗时（秒）（所有类型都必需）", gt=0)

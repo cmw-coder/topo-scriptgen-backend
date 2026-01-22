@@ -8,7 +8,6 @@ from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-from app.services.claude_service import claude_service
 from app.core.config import settings
 from app.models.common import BaseResponse
 

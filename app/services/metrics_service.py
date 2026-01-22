@@ -78,6 +78,40 @@ class MetricsService:
         """
         return self._current_flow_ids.get(username)
 
+    def get_or_create_flow_id(self, username: str) -> str:
+        """
+        获取或创建指定用户的当前流程ID
+        如果流程不存在，则自动创建一个默认流程
+
+        Args:
+            username: 用户名
+
+        Returns:
+            流程ID
+        """
+        # 检查是否已有活动流程
+        if username in self._current_flow_ids:
+            flow_id = self._current_flow_ids[username]
+            if flow_id in self._flows:
+                return flow_id
+
+        # 不存在则创建默认流程
+        flow_id = str(uuid.uuid4())
+        flow = WorkflowMetrics(
+            flow_id=flow_id,
+            username=username,
+            workspace="",
+            user_prompt="",
+            status="pending"
+        )
+
+        # 保存到内存缓存
+        self._flows[flow_id] = flow
+        self._current_flow_ids[username] = flow_id
+
+        logger.info(f"自动创建默认流程: flow_id={flow_id}, username={username}")
+        return flow_id
+
     def create_flow(self, user_prompt: str, workspace: str) -> str:
         """
         创建新的流程统计记录
@@ -490,6 +524,155 @@ class MetricsService:
         except Exception as e:
             logger.error(f"更新流程文件失败: flow_id={flow_id}, error={e}")
             return False
+
+    def _recalculate_total_debug_duration(self, flow: WorkflowMetrics) -> float:
+        """
+        重新计算 total_debug_duration（所有 command_debug 和 write_script 的总和）
+
+        Args:
+            flow: 流程对象
+
+        Returns:
+            总调试时长（秒）
+        """
+        total = 0.0
+
+        # 累加 command_debug_metrics
+        if flow.command_debug_metrics:
+            for file_metrics in flow.command_debug_metrics.values():
+                total += file_metrics.get("total_duration", 0.0)
+
+        # 累加 write_script_metrics
+        if flow.write_script_metrics:
+            for file_metrics in flow.write_script_metrics.values():
+                total += file_metrics.get("total_duration", 0.0)
+
+        return round(total, 2)
+
+    def push_metrics(self, metrics_type: str, file_name: str | None, interval: float) -> dict:
+        """
+        推送指标数据
+
+        Args:
+            metrics_type: 指标类型 (command_debug | keep_alive | write_script)
+            file_name: 文件名（command_debug 和 write_script 类型必需）
+            interval: 操作耗时（秒）
+
+        Returns:
+            包含更新后指标数据的字典
+
+        Raises:
+            ValueError: 参数不合法时抛出
+        """
+        username = self._get_username()
+
+        # 获取或自动创建当前用户的最新流程
+        flow_id = self.get_or_create_flow_id(username)
+        flow = self._flows.get(flow_id)
+
+        if not flow:
+            raise ValueError(f"流程不存在: {flow_id}")
+
+        now = datetime.now()
+
+        if metrics_type == "command_debug":
+            # 命令行调试指标（按文件记录）
+            if not file_name:
+                raise ValueError("command_debug 类型需要 file_name 参数")
+
+            if flow.command_debug_metrics is None:
+                flow.command_debug_metrics = {}
+
+            file_metrics = flow.command_debug_metrics.get(file_name, {})
+            current_duration = file_metrics.get("total_duration", 0.0)
+            new_duration = round(current_duration + interval, 2)
+
+            flow.command_debug_metrics[file_name] = {
+                "total_duration": new_duration,
+                "last_updated": now.isoformat()
+            }
+
+            # 重新计算 total_debug_duration
+            flow.total_debug_duration = self._recalculate_total_debug_duration(flow)
+
+            self.update_flow_file(flow_id)
+
+            logger.info(
+                f"记录command_debug指标: flow_id={flow_id}, username={username}, "
+                f"file={file_name}, interval={interval}秒, "
+                f"file_duration={new_duration}秒, total_debug_duration={flow.total_debug_duration}秒"
+            )
+
+            return {
+                "flow_id": flow_id,
+                "type": metrics_type,
+                "file_name": file_name,
+                "interval": interval,
+                "file_duration": new_duration,
+                "total_debug_duration": flow.total_debug_duration
+            }
+
+        elif metrics_type == "write_script":
+            # 写脚本时间指标（按文件记录）
+            if not file_name:
+                raise ValueError("write_script 类型需要 file_name 参数")
+
+            if flow.write_script_metrics is None:
+                flow.write_script_metrics = {}
+
+            file_metrics = flow.write_script_metrics.get(file_name, {})
+            current_duration = file_metrics.get("total_duration", 0.0)
+            new_duration = round(current_duration + interval, 2)
+
+            flow.write_script_metrics[file_name] = {
+                "total_duration": new_duration,
+                "last_updated": now.isoformat()
+            }
+
+            # 重新计算 total_debug_duration
+            flow.total_debug_duration = self._recalculate_total_debug_duration(flow)
+
+            self.update_flow_file(flow_id)
+
+            logger.info(
+                f"记录write_script指标: flow_id={flow_id}, username={username}, "
+                f"file={file_name}, interval={interval}秒, "
+                f"file_duration={new_duration}秒, total_debug_duration={flow.total_debug_duration}秒"
+            )
+
+            return {
+                "flow_id": flow_id,
+                "type": metrics_type,
+                "file_name": file_name,
+                "interval": interval,
+                "file_duration": new_duration,
+                "total_debug_duration": flow.total_debug_duration
+            }
+
+        elif metrics_type == "keep_alive":
+            # Web使用时间（全局，不按文件）
+            current_duration = flow.keep_alive_duration or 0.0
+            new_duration = round(current_duration + interval, 2)
+            flow.keep_alive_duration = new_duration
+
+            self.update_flow_file(flow_id)
+
+            logger.info(
+                f"记录keep_alive指标: flow_id={flow_id}, username={username}, "
+                f"interval={interval}秒, total_duration={new_duration}秒"
+            )
+
+            return {
+                "flow_id": flow_id,
+                "type": metrics_type,
+                "interval": interval,
+                "total_duration": new_duration
+            }
+
+        else:
+            raise ValueError(
+                f"不支持的指标类型: {metrics_type}，支持的类型: command_debug, keep_alive, write_script"
+            )
 
 
 # 创建全局实例
