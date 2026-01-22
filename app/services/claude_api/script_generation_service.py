@@ -118,7 +118,7 @@ class ScriptGenerationService:
                 self._update_task_status(task_id, "running")
 
             # 发送继续执行的消息
-            self._send_message("info", "\n\n===== 开始执行后续流程 =====", "processing")
+            self._send_message(task_id, "info", "\n\n===== 开始执行后续流程 =====", "processing")
 
             # 第2步：拷贝脚本并执行 ITC run
             self.logger.info(f"Task {task_id}: 开始执行拷贝和ITC run")
@@ -131,7 +131,7 @@ class ScriptGenerationService:
             self.logger.error(f"Task {task_id}: 完整流程执行失败: {str(e)}\n{traceback.format_exc()}")
 
             # 发送错误消息
-            self._send_message("error", f"完整流程执行失败: {str(e)}", "end")
+            self._send_message(task_id, "error", f"完整流程执行失败: {str(e)}", "end")
 
             # 写入任务结束标识
             task_logger.write_end_log(task_id, "failed")
@@ -154,18 +154,17 @@ class ScriptGenerationService:
             script_filename: 脚本文件名
             device_commands: 用户输入的新命令内容
         """
-        # 写入任务开始标识
-        task_logger.write_start_log(task_id, "脚本回写任务")
+        # 写入脚本信息（不再单独写入任务开始标识，避免重复）
         task_logger.write_log(task_id, f"脚本: {script_filename}")
 
         try:
             # 更新任务状态为运行中
             self._update_task_status(task_id, "running")
-            self._send_message("info", "开始执行脚本生成和回写任务", "processing")
+            self._send_message(task_id, "info", "开始执行脚本生成和回写任务", "processing")
 
             # ========== 第1步：从 filename_command_mapping 获取旧命令 ==========
             self.logger.info(f"Task {task_id}: 从 filename_command_mapping 获取旧命令")
-            self._send_message("info", "===== 第1步：获取旧命令 =====", "processing")
+            self._send_message(task_id, "info", "===== 第1步：获取旧命令 =====", "processing")
 
             # 首先刷新全局变量，确保使用最新的日志数据
             from app.services.script_command_extract import refresh_static_variables, find_command_by_filename
@@ -177,15 +176,15 @@ class ScriptGenerationService:
             old_command = find_command_by_filename(script_filename)
 
             if old_command:
-                self._send_message("info", f"✓ 找到旧命令（长度: {len(old_command)} 字符）", "processing")
+                self._send_message(task_id, "info", f"✓ 找到旧命令（长度: {len(old_command)} 字符）", "processing")
                 self.logger.info(f"Task {task_id}: 成功找到旧命令，长度: {len(old_command)} 字符")
             else:
-                self._send_message("warning", "⚠ 未找到旧命令，将使用空命令", "processing")
+                self._send_message(task_id, "warning", "⚠ 未找到旧命令，将使用空命令", "processing")
                 self.logger.warning(f"Task {task_id}: 未找到匹配的旧命令: {script_filename}")
 
             # ========== 第2步：创建临时文件 ==========
             self.logger.info(f"Task {task_id}: 创建临时文件")
-            self._send_message("info", "===== 第2步：创建临时文件 =====", "processing")
+            self._send_message(task_id, "info", "===== 第2步：创建临时文件 =====", "processing")
 
             # 创建临时目录
             temp_dir = tempfile.mkdtemp(prefix="script_write_back_")
@@ -195,17 +194,17 @@ class ScriptGenerationService:
             old_command_file = os.path.join(temp_dir, "old_command.md")
             with open(old_command_file, 'w', encoding='utf-8') as f:
                 f.write(old_command if old_command else "")
-            self._send_message("info", f"✓ 旧命令已保存到临时文件", "processing")
+            self._send_message(task_id, "info", f"✓ 旧命令已保存到临时文件", "processing")
 
             # 保存新命令到临时文件
             new_command_file = os.path.join(temp_dir, "new_command.md")
             with open(new_command_file, 'w', encoding='utf-8') as f:
                 f.write(device_commands)
-            self._send_message("info", f"✓ 新命令已保存到临时文件", "processing")
+            self._send_message(task_id, "info", f"✓ 新命令已保存到临时文件", "processing")
 
             # ========== 第3步：调用 command_write_back.py 的 main 函数 ==========
             self.logger.info(f"Task {task_id}: 调用 command_write_back.py")
-            self._send_message("info", "===== 第3步：执行脚本回写 =====", "processing")
+            self._send_message(task_id, "info", "===== 第3步：执行脚本回写 =====", "processing")
 
             # 导入 command_write_back 模块
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../services/claude/process_script_write_back"))
@@ -226,14 +225,14 @@ class ScriptGenerationService:
                 self.logger.info(f"Task {task_id}: 调用参数: {sys.argv}")
 
                 # 调用 main 函数
-                self._send_message("info", "正在执行脚本回写，请稍候...", "processing")
+                self._send_message(task_id, "info", "正在执行脚本回写，请稍候...", "processing")
 
                 # 由于 command_write_back.main() 是同步函数，我们在线程池中运行它
                 import concurrent.futures
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, command_write_back.main)
 
-                self._send_message("info", "✓ 脚本回写完成", "processing")
+                self._send_message(task_id, "info", "✓ 脚本回写完成", "processing")
 
             finally:
                 # 恢复旧的 sys.argv
@@ -241,11 +240,11 @@ class ScriptGenerationService:
 
             # ========== 第4步：清理临时文件 ==========
             self.logger.info(f"Task {task_id}: 清理临时文件")
-            self._send_message("info", "===== 第4步：清理临时文件 =====", "processing")
+            self._send_message(task_id, "info", "===== 第4步：清理临时文件 =====", "processing")
 
             # ========== 第5步：拷贝修改后的脚本到目标目录 ==========
             self.logger.info(f"Task {task_id}: 拷贝修改后的脚本到目标目录")
-            self._send_message("info", "===== 第5步：拷贝修改后的脚本到目标目录 =====", "processing")
+            self._send_message(task_id, "info", "===== 第5步：拷贝修改后的脚本到目标目录 =====", "processing")
 
             username = getpass.getuser()
             target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
@@ -267,15 +266,15 @@ class ScriptGenerationService:
                 except PermissionError:
                     self.logger.warning(f"Task {task_id}: ⚠️ 权限不足，无法设置脚本文件权限: {target_script_path}")
 
-                self._send_message("info", f"✓ 修改后的脚本已拷贝到: {target_script_path}", "processing")
+                self._send_message(task_id, "info", f"✓ 修改后的脚本已拷贝到: {target_script_path}", "processing")
                 self.logger.info(f"Task {task_id}: 脚本已拷贝到 {target_script_path}")
             except Exception as e:
                 self.logger.error(f"Task {task_id}: 拷贝脚本失败: {str(e)}")
-                self._send_message("warning", f"⚠ 拷贝脚本失败: {str(e)}", "processing")
+                self._send_message(task_id, "warning", f"⚠ 拷贝脚本失败: {str(e)}", "processing")
 
             # ========== 第6步：拷贝 default.topox 文件 ==========
             self.logger.info(f"Task {task_id}: 拷贝 default.topox 文件")
-            self._send_message("info", "===== 第6步：拷贝 default.topox 文件 =====", "processing")
+            self._send_message(task_id, "info", "===== 第6步：拷贝 default.topox 文件 =====", "processing")
 
             try:
                 # 获取工作目录，在工作区根目录直接查找 topox 文件
@@ -300,7 +299,7 @@ class ScriptGenerationService:
                                 self.logger.warning(f"Task {task_id}: 删除 topox 文件 {topox_filename} 失败: {str(e)}")
 
                     if deleted_topox_count > 0:
-                        self._send_message("info", f"✓ 已删除 {deleted_topox_count} 个其他名称的 topox 文件", "processing")
+                        self._send_message(task_id, "info", f"✓ 已删除 {deleted_topox_count} 个其他名称的 topox 文件", "processing")
 
                     # 拷贝 default.topox 到目标目录
                     target_topox_path = os.path.join(target_dir, "default.topox")
@@ -312,19 +311,19 @@ class ScriptGenerationService:
                     except PermissionError:
                         self.logger.warning(f"Task {task_id}: ⚠️ 权限不足，无法设置 topox 文件权限: {target_topox_path}")
 
-                    self._send_message("info", f"✓ default.topox 已拷贝到: {target_topox_path}", "processing")
+                    self._send_message(task_id, "info", f"✓ default.topox 已拷贝到: {target_topox_path}", "processing")
                     self.logger.info(f"Task {task_id}: default.topox 已拷贝到 {target_topox_path}")
                 else:
-                    self._send_message("warning", f"⚠ 未找到 default.topox 文件: {default_topox_source}", "processing")
+                    self._send_message(task_id, "warning", f"⚠ 未找到 default.topox 文件: {default_topox_source}", "processing")
                     self.logger.warning(f"Task {task_id}: default.topox 文件不存在: {default_topox_source}")
 
             except Exception as e:
                 self.logger.error(f"Task {task_id}: 拷贝 default.topox 失败: {str(e)}")
-                self._send_message("warning", f"⚠ 拷贝 default.topox 失败: {str(e)}", "processing")
+                self._send_message(task_id, "warning", f"⚠ 拷贝 default.topox 失败: {str(e)}", "processing")
 
             # ========== 脚本回写完成 ==========
             self._update_task_status(task_id, "completed")
-            self._send_message("success", "===== 脚本回写任务完成 =====", "end")
+            self._send_message(task_id, "success", "===== 脚本回写任务完成 =====", "end")
             self.logger.info(f"Task {task_id}: 脚本回写完成")
 
             # 写入任务结束标识
@@ -336,7 +335,7 @@ class ScriptGenerationService:
             self.logger.error(f"Task {task_id}: {error_msg}")
 
             self._update_task_status(task_id, "failed")
-            self._send_message("error", error_msg, "end")
+            self._send_message(task_id, "error", error_msg, "end")
 
             # 写入任务结束标识
             task_logger.write_end_log(task_id, "failed")
@@ -351,20 +350,17 @@ class ScriptGenerationService:
             task_id: 任务ID
             script_full_path: 脚本文件的绝对路径
         """
-        # 写入任务开始标识
-        task_logger.write_start_log(task_id, "脚本拷贝和ITC run任务")
-
         try:
             # ========== 第5步：拷贝脚本到指定目录 ==========
             self.logger.info(f"Task {task_id}: 拷贝脚本到指定目录")
-            self._send_message("info", "===== 第5步：拷贝脚本到指定目录 =====", "processing")
+            self._send_message(task_id, "info", "===== 第5步：拷贝脚本到指定目录 =====", "processing")
 
             username = getpass.getuser()
             target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
 
             # 创建目标目录
             os.makedirs(target_dir, exist_ok=True)
-            self._send_message("info", f"✓ 目标目录已创建: {target_dir}", "processing")
+            self._send_message(task_id, "info", f"✓ 目标目录已创建: {target_dir}", "processing")
 
             # ========== 删除目标目录下的 conftest.py 和 test_ 开头的 .py 文件 ==========
             deleted_files = []
@@ -391,13 +387,13 @@ class ScriptGenerationService:
                     self.logger.warning(f"Task {task_id}: 删除 conftest.py 失败: {str(e)}")
 
             if deleted_files:
-                self._send_message("info", f"✓ 已删除 {len(deleted_files)} 个旧文件: {', '.join(deleted_files)}", "processing")
+                self._send_message(task_id, "info", f"✓ 已删除 {len(deleted_files)} 个旧文件: {', '.join(deleted_files)}", "processing")
 
             # 拷贝脚本文件
             script_name = os.path.basename(script_full_path)
             target_script_path = os.path.join(target_dir, script_name)
             shutil.copy2(script_full_path, target_script_path)
-            self._send_message("info", f"✓ 脚本已拷贝到: {target_script_path}", "processing")
+            self._send_message(task_id, "info", f"✓ 脚本已拷贝到: {target_script_path}", "processing")
             self.logger.info(f"Task {task_id}: 脚本已拷贝到 {target_script_path}")
 
             # 查找并拷贝项目工作区的 conftest.py
@@ -435,7 +431,7 @@ class ScriptGenerationService:
                         break
 
             if conftest_file:
-                self._send_message("info", f"✓ 找到工作区 conftest.py: {os.path.basename(conftest_file)}", "processing")
+                self._send_message(task_id, "info", f"✓ 找到工作区 conftest.py: {os.path.basename(conftest_file)}", "processing")
                 self.logger.info(f"Task {task_id}: 从工作区找到 conftest.py: {conftest_file}")
             else:
                 # 工作区未找到，尝试在脚本所在目录查找
@@ -448,30 +444,33 @@ class ScriptGenerationService:
                     match_realpath = os.path.realpath(matches[0])
                     if match_realpath.startswith(workspace_realpath):
                         conftest_file = matches[0]
-                        self._send_message("info", f"✓ 找到 conftest.py（脚本所在目录）", "processing")
+                        self._send_message(task_id, "info", f"✓ 找到 conftest.py（脚本所在目录）", "processing")
                         self.logger.info(f"Task {task_id}: 从脚本目录找到 conftest.py: {conftest_file}")
                     else:
                         self.logger.warning(f"Task {task_id}: conftest.py 不在工作目录内，跳过: {matches[0]}")
                 else:
-                    self._send_message("warning", "⚠ 未找到 conftest.py 文件", "processing")
+                    self._send_message(task_id, "warning", "⚠ 未找到 conftest.py 文件", "processing")
 
             if conftest_file:
                 target_conftest_path = os.path.join(target_dir, "conftest.py")
                 shutil.copy2(conftest_file, target_conftest_path)
-                self._send_message("info", f"✓ conftest.py 已拷贝", "processing")
+                self._send_message(task_id, "info", f"✓ conftest.py 已拷贝", "processing")
                 self.logger.info(f"Task {task_id}: conftest.py 已拷贝到 {target_conftest_path}")
 
             # 创建 __init__.py（如果不存在）
             init_file = os.path.join(target_dir, "__init__.py")
             if not os.path.exists(init_file):
                 open(init_file, 'a').close()
-                self._send_message("info", f"✓ __init__.py 已创建", "processing")
+                self._send_message(task_id, "info", f"✓ __init__.py 已创建", "processing")
 
             # 设置目录权限为 777
             def set_permissions_recursive(path, mode):
                 """递归设置目录及其所有内容的权限（遇到错误继续执行）"""
                 errors = []
                 for root, dirs, files in os.walk(path):
+                    # 跳过 log 目录（共享目录下的日志文件夹）
+                    if "log" in dirs:
+                        dirs.remove("log")
                     for dir_name in dirs:
                         dir_path = os.path.join(root, dir_name)
                         try:
@@ -479,6 +478,9 @@ class ScriptGenerationService:
                         except Exception as e:
                             errors.append(f"目录 {dir_path}: {str(e)}")
                     for file_name in files:
+                        # 跳过 map_info.json 文件（共享目录下的配置文件）
+                        if file_name == "map_info.json":
+                            continue
                         file_path = os.path.join(root, file_name)
                         try:
                             os.chmod(file_path, mode)
@@ -493,31 +495,31 @@ class ScriptGenerationService:
             # 执行权限设置，即使失败也不影响后续流程
             permission_errors = set_permissions_recursive(target_dir, 0o777)
             if permission_errors:
-                self._send_message("warning", f"⚠ 部分文件权限设置失败（但不影响后续执行）:\n" + "\n".join(permission_errors[:5]), "processing")
+                self._send_message(task_id, "warning", f"⚠ 部分文件权限设置失败（但不影响后续执行）:\n" + "\n".join(permission_errors[:5]), "processing")
                 if len(permission_errors) > 5:
-                    self._send_message("warning", f"... 还有 {len(permission_errors) - 5} 个文件权限设置失败", "processing")
+                    self._send_message(task_id, "warning", f"... 还有 {len(permission_errors) - 5} 个文件权限设置失败", "processing")
             else:
-                self._send_message("info", f"✓ 目录权限已设置", "processing")
+                self._send_message(task_id, "info", f"✓ 目录权限已设置", "processing")
 
             # ========== 第6步：调用 ITC run 执行脚本 ==========
             self.logger.info(f"Task {task_id}: 调用 ITC run")
-            self._send_message("info", "===== 第6步：调用 ITC run 执行脚本 =====", "processing")
+            self._send_message(task_id, "info", "===== 第6步：调用 ITC run 执行脚本 =====", "processing")
 
             # 获取 executorip
             executorip = settings.get_deploy_executor_ip()
 
             if not executorip:
-                self._send_message("error", "未找到部署的执行机IP，请先调用 /deploy 接口部署环境", "end")
+                self._send_message(task_id, "error", "未找到部署的执行机IP，请先调用 /deploy 接口部署环境", "end")
                 self._update_task_status(task_id, "failed")
                 # 写入任务结束标识
                 task_logger.write_end_log(task_id, "failed")
                 return
 
-            self._send_message("info", f"✓ 执行机IP: {executorip}", "processing")
+            self._send_message(task_id, "info", f"✓ 执行机IP: {executorip}", "processing")
 
             # 构造 UNC 路径
             unc_path = f"//10.144.41.149/webide/aigc_tool/{username}"
-            self._send_message("info", f"✓ 脚本UNC路径: {unc_path}", "processing")
+            self._send_message(task_id, "info", f"✓ 脚本UNC路径: {unc_path}", "processing")
 
             # 调用 ITC 服务
             from app.services.itc.itc_service import itc_service
@@ -528,7 +530,7 @@ class ScriptGenerationService:
                 executorip=executorip
             )
 
-            self._send_message("info", "正在调用 ITC run 接口，请稍候...", "processing")
+            self._send_message(task_id, "info", "正在调用 ITC run 接口，请稍候...", "processing")
             self.logger.info(f"Task {task_id}: 调用 ITC run 接口: scriptspath={unc_path}, executorip={executorip}")
 
             # 执行 ITC run
@@ -544,7 +546,7 @@ class ScriptGenerationService:
                 # 成功
                 import json
                 result_message = f"✓ ITC 执行成功\n\n返回信息:\n{json.dumps(return_info, ensure_ascii=False, indent=2)}"
-                self._send_message("success", result_message, "end")
+                self._send_message(task_id, "success", result_message, "end")
                 self._update_task_status(task_id, "completed")
 
                 # 写入任务结束标识
@@ -553,7 +555,7 @@ class ScriptGenerationService:
                 # 失败
                 import json
                 error_message = f"✗ ITC 执行失败 (错误码: {return_code})\n\n错误信息:\n{json.dumps(return_info, ensure_ascii=False, indent=2)}"
-                self._send_message("error", error_message, "end")
+                self._send_message(task_id, "error", error_message, "end")
                 self._update_task_status(task_id, "failed")
 
                 # 写入任务结束标识
@@ -566,7 +568,7 @@ class ScriptGenerationService:
             error_msg = f"拷贝和执行脚本失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
             self.logger.error(f"Task {task_id}: {error_msg}")
             self._update_task_status(task_id, "failed")
-            self._send_message("error", error_msg, "end")
+            self._send_message(task_id, "error", error_msg, "end")
 
             # 写入任务结束标识
             task_logger.write_end_log(task_id, "failed")
