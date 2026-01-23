@@ -201,8 +201,17 @@ class LOGPROCESS:
         results = []
 
         cmd_start = check_command_info.find("{'cmd'")
+        expect_start = check_command_info.find("{'expect'")
+        not_expect_start = check_command_info.find("{'not_expect'")
+        dict_str = ""
         if cmd_start != -1:
             dict_str = check_command_info[cmd_start:]
+        elif expect_start != -1:
+            dict_str = check_command_info[expect_start:]
+        elif not_expect_start != -1:
+            dict_str = check_command_info[not_expect_start:]
+        
+        if dict_str:
             try:
                 extracted_dict = eval(dict_str)
                 if 'expect' in extracted_dict:
@@ -214,7 +223,7 @@ class LOGPROCESS:
                                 'content': str(item)
                             })
                 if 'not_expect' in extracted_dict:
-                    expect_list = extracted_dict['expect']
+                    expect_list = extracted_dict['not_expect']
                     if expect_list:
                         for item in expect_list:
                             results.append({
@@ -224,7 +233,9 @@ class LOGPROCESS:
 
             except Exception as e:
                 print(f"转换失败: {e}")
+
         return results
+
 
     def get_expect_string(self, check_res):
         """
@@ -482,7 +493,7 @@ class LOGPROCESS:
                         result.append(check_info)
                     elif key in atf_check_type:
                         check_info = self.get_atf_check_info(value, key)
-                        check_info["func"] = step_func
+                        check_info["func"] = flag
                         result.append(check_info)
         if "teardown" == flag:
             if isinstance(info_dict, dict):
@@ -499,7 +510,7 @@ class LOGPROCESS:
                         result.append(check_info)
                     elif key in atf_check_type:
                         check_info = self.get_atf_check_info(value, key)
-                        check_info["func"] = step_func
+                        check_info["func"] = flag
                         result.append(check_info)
         return result
 
@@ -674,7 +685,7 @@ class LOGPROCESS:
                     commands_info, tail_error_value = self.find_keys_recursive(step)
                     if "Error_occurred" in step:
                         error_info = self.step_command_error_info_process(tail_error_value,step_func,step_num)
-
+                        result.append(error_info)
                     if commands_info:
                         for item in commands_info:
                             commands_info_list = self.step_command_info_extract(item,step_func,step_num)
@@ -696,7 +707,7 @@ class LOGPROCESS:
                         commands_info, tail_error_value = self.find_keys_recursive(step)
                         if "Error_occurred" in step:
                             error_info = self.step_command_error_info_process(tail_error_value,step_func,step_num)
-
+                            result.append(error_info)
                         if commands_info:
                             for item in commands_info:
                                 commands_info_list = self.step_command_info_extract(item,step_func,step_num)

@@ -62,6 +62,9 @@ def repair_func_indent(file_path):
     :param file_path: 文件路径（如'a.py'）
     :return: None
     """
+    if 'conftest' in file_path:
+        return  # conftest.py 不处理
+
     try:
         # 1. 读取文件，tab统一转为4个空格
         with open(file_path, 'r', encoding='utf-8') as f:
