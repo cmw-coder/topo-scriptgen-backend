@@ -108,7 +108,7 @@ async def deploy_environment(request: NewDeployRequest):
 
         # 持久化保存 versionPath 和 deviceType 到 aigc.json 文件
         version_path = request.get_version_path()
-        device_type = request.devicetype
+        device_type = request.deviceType
         itc_service.save_deploy_info(version_path, device_type)
         logger.info(f"已保存部署信息: version_path={version_path}, device_type={device_type}")
 

@@ -968,8 +968,8 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
                     logger.info(f"版本路径: {version_path}")
 
                 # 只在有值时才添加 devicetype
-                if request.devicetype:
-                    data["devicetype"] = request.devicetype
+                if request.deviceType:
+                    data["devicetype"] = request.deviceType
 
                 logger.info(f"请求数据: {data}")
                 logger.info(f"请求 URL: {self.base_url}/newdeploy")
@@ -1029,7 +1029,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
                                 self._save_aigc_config(
                                     topox_file=default_topox_file,
                                     version_path=version_path,
-                                    device_type=request.devicetype or "simware9cen",
+                                    device_type=request.deviceType or "simware9cen",
                                     executorip=executorip,
                                     device_list=device_list
                                 )
@@ -1042,7 +1042,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
                                 self._save_aigc_config(
                                     topox_file=default_topox_file,
                                     version_path=version_path,
-                                    device_type=request.devicetype or "simware9cen",
+                                    device_type=request.deviceType or "simware9cen",
                                     executorip=executorip
                                 )
                                 logger.info(f"已保存 aigc.json 配置文件（不含设备列表）")

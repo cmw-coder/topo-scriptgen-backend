@@ -14,11 +14,11 @@ class NewDeployRequest(BaseModel):
     支持的参数：
     - versionPath: 版本目录（兼容旧接口拼写，与 versionpath 二选一）
     - versionpath: 版本目录（正确拼写，与 verisonPath 二选一）
-    - devicetype: 设备类型
+    - deviceType: 设备类型
     """
     versionPath: Optional[str] = Field(None, description="版本目录（兼容旧接口拼写），可选，运行脚本需要的版本目录")
     versionpath: Optional[str] = Field(None, description="版本目录（正确拼写），可选，运行脚本需要的版本目录")
-    devicetype: Optional[str] = Field("simware9cen", description="设备类型，支持simware9cen、simware9dis、simware7dis，默认simware9cen")
+    deviceType: Optional[str] = Field("simware9cen", description="设备类型，支持simware9cen、simware9dis、simware7dis，默认simware9cen")
 
     def get_version_path(self) -> Optional[str]:
         """获取版本路径（优先使用正确拼写的 versionpath，否则使用 versionPath）"""
