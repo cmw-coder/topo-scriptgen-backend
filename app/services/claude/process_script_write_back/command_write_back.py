@@ -63,7 +63,9 @@ def repair_func_indent(file_path):
     :return: None
     """
     if 'conftest' in file_path:
-        return  # conftest.py 不处理
+        expect_indent = 0
+    else:
+        expect_indent = 4
 
     try:
         # 1. 读取文件，tab统一转为4个空格
@@ -78,13 +80,13 @@ def repair_func_indent(file_path):
         first_line = lines[0]
         old_indent = len(first_line) - len(first_line.lstrip())
         
-        # 核心新增：缩进已为4则直接退出
-        if old_indent == 4:
-            print(f"✅ {file_path} 函数缩进已为4个空格，无需调整")
+        # 核心新增：缩进等于期望值则直接退出
+        if old_indent == expect_indent:
+            print(f"✅ {file_path} 函数缩进已为 {expect_indent} 个空格，无需调整")
             return
-        
+
         # 3. 计算缩进调整量并统一调整所有行
-        indent_delta = 4 - old_indent
+        indent_delta = expect_indent - old_indent
         repaired_lines = []
         for line in lines:
             if not line.strip():  # 空行直接保留
@@ -955,6 +957,177 @@ def save_history_file(root_dir, files_to_copy):
         print(f"❌ 操作失败：{str(e)}")
 
 
+async def command_to_func_parallel_task(func_name, old_command, new_command, func_revert_dir):
+    """异步处理单个函数，生成function.py文件
+    
+    参数说明：
+    func_name: str - 函数名称
+    old_command: dict - 旧的命令结构字典
+    new_command: dict - 新的命令结构字典
+    func_revert_dir: str - 函数专属的revert目录（绝对路径）
+    """
+    # 跳过不存在的函数
+    if func_name not in old_command or func_name not in new_command:
+        print(f"警告：函数 {func_name} 在旧/新命令中不存在，跳过处理")
+        return None
+    
+    # 生成修改前的txt文件，保存在函数专属的revert目录
+    before_content = [f"!!!func {func_name}"]
+    for device_dict in old_command[func_name]:
+        for dev_name, cmd_str in device_dict.items():
+            before_content.append(f"!!device {dev_name}")
+            cmds = [cmd.strip() for cmd in cmd_str.split("\n") if cmd.strip()]
+            before_content.extend(cmds)
+    before_file = os.path.join(func_revert_dir, f"function_before_modification.md")
+    with open(before_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(before_content))
+    
+    # 生成修改后的txt文件，保存在函数专属的revert目录
+    after_content = [f"!!!func {func_name}"]
+    for device_dict in new_command[func_name]:
+        for dev_name, cmd_str in device_dict.items():
+            after_content.append(f"!!device {dev_name}")
+            cmds = [cmd.strip() for cmd in cmd_str.split("\n") if cmd.strip()]
+            after_content.extend(cmds)
+    after_file = os.path.join(func_revert_dir, f"function_after_modification.md")
+    with open(after_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(after_content))
+    
+    # 清空并生成function.py，保存在函数专属的revert目录
+    func_py_path = os.path.join(func_revert_dir, f"function.py")
+    with open(func_py_path, 'w', encoding='utf-8') as f:
+        pass
+    
+    # 调用connect.py的异步函数生成function.py
+    import connect
+
+    relative_path = "../"
+    target_folder = os.path.abspath(os.path.join(func_revert_dir, relative_path))
+    result = await connect.process_convert_folder(target_folder, 5)
+    print(f"处理结果: {result}")
+    
+    # 修复缩进
+    repair_func_indent(func_py_path)
+    
+    # 返回结果，用于后续串行更新
+    return {
+        'func_name': func_name,
+        'func_py_path': func_py_path,
+        'before_file': before_file,
+        'after_file': after_file
+    }
+
+
+async def command_to_func_parallel_run(tasks):
+    results = await asyncio.gather(*tasks)
+    return results
+
+
+def command_to_func_parallel(test_script, new_command, old_command, diff_command_list):
+    """
+    并行版本的command_to_func函数
+    
+    参数说明：
+    test_script: str - 测试脚本文件路径
+    new_command: dict - 新的命令结构字典
+    old_command: dict - 旧的命令结构字典
+    diff_command_list: list - 有差异的函数名列表
+    """
+    global glb_parent_dir
+    
+    # 获取当前时间，格式为年-月-日-时-分-秒
+    from datetime import datetime
+    time_prefix = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    
+    main_skill_md = os.path.abspath(f"{glb_parent_dir}/../SKILL.md")
+
+    # 获取主revert目录的绝对路径
+    main_revert_dir = os.path.abspath(f"{glb_parent_dir}/../revert")
+    
+    # 创建目标目录
+    os.makedirs(main_revert_dir, exist_ok=True)
+    
+    # 阶段1：并行处理所有函数，生成各自的function.py文件
+    tasks = []
+    for func_name in diff_command_list:
+        # 为每个函数创建独立的revert目录，结构为 "时间前缀_函数名称/revert"
+        time_dir = os.path.abspath(os.path.join(main_revert_dir, f"{time_prefix}"))
+        func_dir = os.path.abspath(os.path.join(main_revert_dir, f"{time_dir}", f"{func_name}"))
+        func_revert_dir = os.path.abspath(os.path.join(func_dir, "revert"))
+        
+        # 创建函数专属的revert目录结构
+        os.makedirs(func_revert_dir, exist_ok=True)
+        
+        # 复制必要文件到函数专属的revert目录
+        # 需要复制的文件列表
+        files_to_copy = [
+            os.path.join(main_revert_dir, "prototype_script.py"),
+            os.path.join(main_revert_dir, "mapping.json"),
+            os.path.join(main_revert_dir, "注意事项.md")
+        ]
+
+        # 复制文件revert下面的文件
+        for file_path in files_to_copy:
+            if os.path.exists(file_path):
+                shutil.copy2(file_path, func_revert_dir)
+                print(f"✅ 复制文件：{file_path} → {func_revert_dir}")
+            else:
+                print(f"⚠️ 文件不存在：{file_path}，跳过复制")
+
+        # 复制SKILL.md文件
+        func_skill_md = os.path.abspath(os.path.join(func_dir, "SKILL.md"))
+        if os.path.exists(main_skill_md):
+            shutil.copy2(main_skill_md, func_skill_md)
+            print(f"✅ 复制文件：{main_skill_md} → {func_skill_md}")
+
+        # 调用process_func_async，传递函数专属的revert目录作为第4个参数
+        task = command_to_func_parallel_task(func_name, old_command, new_command, func_revert_dir)
+        tasks.append(task)
+    
+    # 执行所有异步任务
+    results = asyncio.run(command_to_func_parallel_run(tasks))
+
+    # 过滤掉None结果（跳过的函数）
+    valid_results = [result for result in results if result is not None]
+    
+    # 将结果按func_name映射，方便查找
+    result_map = {result['func_name']: result for result in valid_results}
+    
+    # 阶段2：严格按照diff_command_list的顺序，串行更新到test_script中
+    for func_name in diff_command_list:
+        # 检查该函数是否有处理结果
+        if func_name not in result_map:
+            continue
+        
+        result = result_map[func_name]
+        func_py_path = result['func_py_path']
+        before_file = result['before_file']
+        after_file = result['after_file']
+        
+        # 确保文件存在
+        if not os.path.exists(func_py_path):
+            print(f"警告：{func_py_path} 不存在，跳过函数替换")
+            continue
+        
+        # 读取function.py中的函数定义
+        func_dict = parse_py_func(func_py_path)
+        
+        # 更新函数到test_script
+        update_func(test_script, func_dict)
+
+        # 保存历史文件
+        # files_to_copy = [test_script, before_file, after_file, func_py_path]
+        # save_history_file(glb_parent_dir, files_to_copy)
+    
+    print(f"并行处理完成，共处理 {len(valid_results)} 个函数")
+
+    # 保存处理后的脚本
+    shutil.copy2(test_script, time_dir)
+    print(f"✅ 复制文件到目录：{test_script} → {func_skill_md}")
+
+    return
+
+
 def command_to_func(test_script, new_command, old_command, diff_command_list):
     """
     处理差异函数，生成修改前后的命令文件，调用connect.py并替换测试脚本中的同名函数
@@ -1071,7 +1244,7 @@ def write_back_diff_func(script_file, old_command_file, new_command_file):
     os.makedirs(revert_path, exist_ok=True)  # 不存在则创建，存在则不报错
 
     # 有差异的函数重新生成
-    command_to_func(script_file, new_command_dict, old_command_dict, diff_func_list)
+    command_to_func_parallel(script_file, new_command_dict, old_command_dict, diff_func_list)
 
 
 # 检查文件是否存在
