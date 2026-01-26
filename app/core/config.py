@@ -89,10 +89,6 @@ class Settings:
     _DEPLOY_STATUS: str = "not_deployed"  # not_deployed, deploying, deployed, failed
     _DEPLOY_ERROR_MESSAGE: Optional[str] = None  # 部署失败的错误信息
 
-    # 全局静态变量 - 版本路径和设备类型
-    _VERSION_PATH: Optional[str] = None
-    _DEVICE_TYPE: Optional[str] = None
-
     # 全局静态变量 - 最后 API 调用时间
     _LAST_API_CALL_TIME: Optional[datetime] = None
 
@@ -170,26 +166,6 @@ class Settings:
     def set_deploy_error_message(cls, error_message: str) -> None:
         """设置部署失败的错误信息"""
         cls._DEPLOY_ERROR_MESSAGE = error_message
-
-    @classmethod
-    def get_version_path(cls) -> Optional[str]:
-        """获取版本路径"""
-        return cls._VERSION_PATH
-
-    @classmethod
-    def set_version_path(cls, version_path: str) -> None:
-        """设置版本路径"""
-        cls._VERSION_PATH = version_path
-
-    @classmethod
-    def get_device_type(cls) -> Optional[str]:
-        """获取设备类型"""
-        return cls._DEVICE_TYPE
-
-    @classmethod
-    def set_device_type(cls, device_type: str) -> None:
-        """设置设备类型"""
-        cls._DEVICE_TYPE = device_type
 
     @classmethod
     def initialize_deploy_status_from_aigc_json(cls) -> None:

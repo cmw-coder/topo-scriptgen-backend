@@ -1,12 +1,8 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Query
 from app.models.itc.itc_models import (
     NewDeployRequest,
-    RunScriptRequest,
     RunSingleScriptRequest,
     ExecutorRequest,
-    RunScriptResponse,
-    SimpleResponse,
     ItcLogFileListResponse,
     ItcLogFileContentRequest,
     ItcLogFileContentResponse,
@@ -20,7 +16,7 @@ from app.core.config import settings
 router = APIRouter(tags=["ITC 自动化测试"])
 
 @router.post("/deploy", response_model=BaseResponse)
-async def deploy_environment(request: NewDeployRequest, background_tasks: BackgroundTasks):
+async def deploy_environment(request: NewDeployRequest):
     """
     部署测试环境 - 自动查找工作目录中的 topox 文件
     立即返回成功响应，后台异步执行部署
@@ -110,17 +106,11 @@ async def deploy_environment(request: NewDeployRequest, background_tasks: Backgr
             unc_topofile = f"//10.144.41.149/webide/aigc_tool/{username}"
 
 
-        # 保存 versionPath 和 deviceType 到全局变量
+        # 持久化保存 versionPath 和 deviceType 到 aigc.json 文件
         version_path = request.get_version_path()
         device_type = request.devicetype
-
-        if version_path:
-            settings.set_version_path(version_path)
-            logger.info(f"已设置版本路径: {version_path}")
-
-        if device_type:
-            settings.set_device_type(device_type)
-            logger.info(f"已设置设备类型: {device_type}")
+        itc_service.save_deploy_info(version_path, device_type)
+        logger.info(f"已保存部署信息: version_path={version_path}, device_type={device_type}")
 
         # 启动后台部署任务
         itc_service.start_background_deploy(request, default_topox_file, unc_topofile)
@@ -150,10 +140,13 @@ async def get_deploy_info():
     获取部署信息
 
     返回当前保存的版本路径和设备类型信息
+    从 aigc.json 文件读取，支持多 worker 进程和服务重启
     """
     try:
-        version_path = settings.get_version_path()
-        device_type = settings.get_device_type()
+        # 从 aigc.json 文件读取部署信息
+        deploy_info = itc_service.get_deploy_info()
+        version_path = deploy_info.get("version_path")
+        device_type = deploy_info.get("device_type")
 
         return BaseResponse(
             status="ok",
@@ -355,7 +348,7 @@ async def run_script(request: RunSingleScriptRequest):
         raise HTTPException(status_code=500, detail=f"运行脚本失败: {error_detail}")
 
 @router.post("/undeploy", response_model=BaseResponse)
-async def undeploy_environment(request: ExecutorRequest, background_tasks: BackgroundTasks):
+async def undeploy_environment(request: ExecutorRequest):
     """
     释放测试环境
 
@@ -387,7 +380,7 @@ async def undeploy_environment(request: ExecutorRequest, background_tasks: Backg
         raise HTTPException(status_code=500, detail=f"释放环境失败: {error_detail}")
 
 @router.post("/restoreconfiguration", response_model=BaseResponse)
-async def restore_configuration(request: ExecutorRequest, background_tasks: BackgroundTasks):
+async def restore_configuration(request: ExecutorRequest):
     """
     配置回滚
 
@@ -419,7 +412,7 @@ async def restore_configuration(request: ExecutorRequest, background_tasks: Back
         raise HTTPException(status_code=500, detail=f"配置回滚失败: {error_detail}")
 
 @router.post("/suspend", response_model=BaseResponse)
-async def suspend_script(request: ExecutorRequest, background_tasks: BackgroundTasks):
+async def suspend_script(request: ExecutorRequest):
     """
     暂停脚本执行（暂定功能）
 
@@ -451,7 +444,7 @@ async def suspend_script(request: ExecutorRequest, background_tasks: BackgroundT
         raise HTTPException(status_code=500, detail=f"暂停脚本失败: {error_detail}")
 
 @router.post("/resume", response_model=BaseResponse)
-async def resume_script(request: ExecutorRequest, background_tasks: BackgroundTasks):
+async def resume_script(request: ExecutorRequest):
     """
     恢复脚本执行（暂定功能）
 

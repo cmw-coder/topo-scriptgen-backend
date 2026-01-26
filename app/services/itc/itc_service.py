@@ -532,6 +532,81 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         except Exception as e:
             logger.error(f"清理 aigc.json 时出错: {str(e)}")
 
+    def save_deploy_info(self, version_path: Optional[str] = None, device_type: Optional[str] = None) -> None:
+        """保存部署信息到 aigc.json 文件
+
+        Args:
+            version_path: 版本路径（可选，原样保存不转码）
+            device_type: 设备类型（可选）
+        """
+        try:
+            work_dir = settings.get_work_directory()
+            aigc_tool_dir = os.path.join(work_dir, ".aigc_tool")
+            os.makedirs(aigc_tool_dir, exist_ok=True)
+
+            aigc_json_path = os.path.join(aigc_tool_dir, "aigc.json")
+
+            # 读取现有配置
+            config = {}
+            if os.path.exists(aigc_json_path):
+                try:
+                    with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                except Exception as e:
+                    logger.warning(f"读取 aigc.json 失败: {str(e)}，将创建新文件")
+
+            # 更新配置（原样保存，不转码）
+            if version_path is not None:
+                config["version_path"] = version_path
+                logger.info(f"已保存 version_path: {version_path}")
+
+            if device_type is not None:
+                config["device_type"] = device_type
+                logger.info(f"已保存 device_type: {device_type}")
+
+            # 写入文件
+            with open(aigc_json_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"已更新 aigc.json 部署信息")
+
+        except Exception as e:
+            logger.error(f"保存部署信息失败: {str(e)}")
+
+    def get_deploy_info(self) -> Dict[str, Optional[str]]:
+        """从 aigc.json 文件读取部署信息
+
+        Returns:
+            包含 version_path 和 device_type 的字典
+        """
+        try:
+            work_dir = settings.get_work_directory()
+            aigc_json_path = os.path.join(work_dir, ".aigc_tool", "aigc.json")
+
+            if not os.path.exists(aigc_json_path):
+                logger.info("aigc.json 文件不存在")
+                return {"version_path": None, "device_type": None}
+
+            with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            version_path = config.get("version_path")
+            device_type = config.get("device_type")
+
+            logger.info(f"从 aigc.json 读取部署信息: version_path={version_path}, device_type={device_type}")
+
+            return {
+                "version_path": version_path,
+                "device_type": device_type
+            }
+
+        except json.JSONDecodeError as e:
+            logger.error(f"解析 aigc.json 失败: {str(e)}")
+            return {"version_path": None, "device_type": None}
+        except Exception as e:
+            logger.error(f"读取部署信息失败: {str(e)}")
+            return {"version_path": None, "device_type": None}
+
     def _save_aigc_config(
         self,
         topox_file: str,
@@ -550,7 +625,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
 
         Args:
             topox_file: topox 文件的本地绝对路径
-            version_path: 版本路径（可选）
+            version_path: 版本路径（可选，原样保存不转码）
             device_type: 设备类型
             executorip: 执行机IP（可选）
             device_list: 设备列表（可选）
@@ -564,15 +639,6 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
 
         # aigc.json 文件路径
         aigc_json_path = os.path.join(aigc_tool_dir, "aigc.json")
-
-        # 转换 version_path：将所有斜杠转换为双反斜杠
-        # 输入示例: //10.153.3.125/cilibv9/V9R1/.../version/release
-        # 输出示例: \\\\10.153.3.125\\cilibv9\\V9R1\\...\\version\\release
-        converted_version_path = ""
-        if version_path:
-            # 将正斜杠转换为双反斜杠
-            converted_version_path = version_path.replace('/', '\\\\')
-            logger.info(f"版本路径转换: {version_path} -> {converted_version_path}")
 
         # 读取现有的 aigc.json（如果存在）
         existing_config = None
@@ -589,7 +655,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             # 创建新配置
             aigc_config = {
                 "topx_file": topox_file,
-                "version_path": converted_version_path,
+                "version_path": version_path,
                 "device_type": device_type
             }
 
@@ -609,9 +675,9 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             # 更新现有配置
             aigc_config = existing_config.copy()
 
-            # 更新基本字段
+            # 更新基本字段（version_path 原样保存，不转码）
             aigc_config["topx_file"] = topox_file
-            aigc_config["version_path"] = converted_version_path
+            aigc_config["version_path"] = version_path
             aigc_config["device_type"] = device_type
 
             # 更新执行机配置
