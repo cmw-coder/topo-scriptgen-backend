@@ -1038,6 +1038,8 @@ class LOGPROCESS:
                         for dut_commond in dut_value:
                             if dut_commond["cmd"] == "ctrl+z":
                                 dut_commond["cmd"] = "return"
+                            if dut_commond["cmd"] == "ctrl+zsystem-view":
+                                dut_commond["cmd"] = "return" + "\n" + "system-view"
                             if "FAIL" == dut_commond["exec_res"] or "WARNING" == dut_commond["exec_res"]:
                                 splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                             else:
@@ -1081,6 +1083,8 @@ class LOGPROCESS:
                         for dut_commond in dut_value:
                             if dut_commond["cmd"] == "ctrl+z":
                                 dut_commond["cmd"] = "return"
+                            if dut_commond["cmd"] == "ctrl+zsystem-view":
+                                dut_commond["cmd"] = "return" + "\n" + "system-view"
                             if "FAIL" == dut_commond["exec_res"] or "WARNING" == dut_commond["exec_res"]:
                                 splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                             else:
@@ -1129,6 +1133,8 @@ class LOGPROCESS:
                                 for dut_commond in dut_value:
                                     if dut_commond["cmd"] == "ctrl+z":
                                         dut_commond["cmd"] = "return"
+                                    if dut_commond["cmd"] == "ctrl+zsystem-view":
+                                        dut_commond["cmd"] = "return" + "\n" + "system-view"
                                     if "FAIL" == dut_commond["exec_res"] or "WARNING" == dut_commond["exec_res"]:
                                         splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                                     elif dut_commond["cmd"]:
@@ -1175,6 +1181,8 @@ class LOGPROCESS:
                         for dut_commond in dut_value:
                             if dut_commond["cmd"] == "ctrl+z":
                                 dut_commond["cmd"] = "return"
+                            if dut_commond["cmd"] == "ctrl+zsystem-view":
+                                dut_commond["cmd"] = "return" + "\n" + "system-view"
                             if "FAIL" == dut_commond["exec_res"] or "WARNING" == dut_commond["exec_res"]:
                                 splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                             else:
@@ -1216,6 +1224,8 @@ class LOGPROCESS:
                         for dut_commond in dut_value:
                             if dut_commond["cmd"] == "ctrl+z":
                                 dut_commond["cmd"] = "return"
+                            if dut_commond["cmd"] == "ctrl+zsystem-view":
+                                dut_commond["cmd"] = "return" + "\n" + "system-view"
                             if "FAIL" == dut_commond["exec_res"] or "WARNING" == dut_commond["exec_res"]:
                                 splice_res = splice_res + "命令执行失败: " + dut_commond["cmd"] + "\n"
                             else:
