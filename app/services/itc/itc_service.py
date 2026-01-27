@@ -1462,8 +1462,10 @@ class ItcLogService:
             # 创建新目录
             new_log_dir.mkdir(parents=True, exist_ok=True)
 
-            # 执行迁移
-            logger.info(f"开始迁移日志文件: {old_log_dir} -> {new_log_dir}")
+            # 执行迁移：先拷贝，成功后删除旧文件
+            logger.info(f"[迁移] 开始迁移日志文件: {old_log_dir} -> {new_log_dir}")
+            copied_files = []  # 记录成功拷贝的文件，用于后续删除
+
             for old_file in old_files:
                 if old_file.is_file():
                     try:
@@ -1471,14 +1473,31 @@ class ItcLogService:
                         dest_file = new_log_dir / old_file.name
                         shutil.copy2(old_file, dest_file)
                         migrated_count += 1
-                        logger.info(f"迁移文件: {old_file.name}")
+                        copied_files.append(old_file)
+                        logger.info(f"[迁移] 成功迁移文件: {old_file.name}")
                     except PermissionError as e:
-                        logger.warning(f"权限不足，跳过文件 {old_file.name}: {str(e)}")
+                        logger.warning(f"[迁移] 权限不足，跳过文件 {old_file.name}: {str(e)}")
                     except Exception as e:
-                        logger.warning(f"迁移文件失败 {old_file.name}: {str(e)}")
+                        logger.warning(f"[迁移] 迁移文件失败 {old_file.name}: {str(e)}")
+
+            # 删除旧目录中已成功拷贝的文件
+            if copied_files:
+                logger.info(f"[迁移] 开始删除旧目录中已迁移的文件...")
+                deleted_count = 0
+                for old_file in copied_files:
+                    try:
+                        old_file.unlink()
+                        deleted_count += 1
+                        logger.info(f"[迁移] 已删除旧文件: {old_file.name}")
+                    except PermissionError as e:
+                        logger.warning(f"[迁移] 权限不足，无法删除旧文件 {old_file.name}: {str(e)}")
+                    except Exception as e:
+                        logger.warning(f"[迁移] 删除旧文件失败 {old_file.name}: {str(e)}")
+
+                logger.info(f"[迁移] 删除完成，共删除 {deleted_count} 个旧文件")
 
             if migrated_count > 0:
-                logger.info(f"迁移完成，共迁移 {migrated_count} 个日志文件")
+                logger.info(f"[迁移] 迁移完成，共迁移 {migrated_count} 个日志文件")
 
         except Exception as e:
             logger.error(f"迁移日志文件时出错: {str(e)}")
