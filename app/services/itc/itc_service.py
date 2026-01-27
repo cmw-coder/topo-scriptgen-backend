@@ -1416,6 +1416,76 @@ class ItcLogService:
     # 类变量：记录每个用户上次清理的日期 {username: last_cleanup_date}
     _last_cleanup_date: Dict[str, str] = {}
 
+    # 类变量：记录每个用户是否已尝试迁移 {username: migrated}
+    _migration_attempted: Dict[str, bool] = {}
+
+    def _migrate_old_log_files(self, username: str, new_log_dir: Path) -> int:
+        """从旧目录迁移日志文件到新项目目录
+
+        旧目录格式: /opt/coder/statistics/build/aigc_tool/{username}/log
+        新目录格式: /opt/coder/statistics/build/aigc_tool/{username}/{project_name}/log
+
+        仅在新目录不存在或为空，且旧目录存在且有文件时执行迁移。
+        安全处理权限问题，不会因权限错误导致崩溃。
+
+        Args:
+            username: 用户名
+            new_log_dir: 新项目的日志目录
+
+        Returns:
+            int: 迁移的文件数量，失败返回 -1
+        """
+        migrated_count = 0
+
+        try:
+            # 构造旧日志目录路径
+            old_log_dir = Path(f"{settings.AIGC_TOOL_LOCAL_BASE}/{username}/log")
+
+            # 检查旧目录是否存在
+            if not old_log_dir.exists() or not old_log_dir.is_dir():
+                logger.info(f"旧日志目录不存在: {old_log_dir}")
+                return 0
+
+            # 检查旧目录是否有文件
+            old_files = list(old_log_dir.iterdir())
+            if not old_files:
+                logger.info(f"旧日志目录为空: {old_log_dir}")
+                return 0
+
+            # 检查新目录是否已有内容
+            if new_log_dir.exists():
+                new_files = list(new_log_dir.iterdir())
+                if new_files:
+                    logger.info(f"新日志目录已有 {len(new_files)} 个文件，跳过迁移")
+                    return 0
+
+            # 创建新目录
+            new_log_dir.mkdir(parents=True, exist_ok=True)
+
+            # 执行迁移
+            logger.info(f"开始迁移日志文件: {old_log_dir} -> {new_log_dir}")
+            for old_file in old_files:
+                if old_file.is_file():
+                    try:
+                        # 使用 shutil.copy2 保留文件元数据
+                        dest_file = new_log_dir / old_file.name
+                        shutil.copy2(old_file, dest_file)
+                        migrated_count += 1
+                        logger.info(f"迁移文件: {old_file.name}")
+                    except PermissionError as e:
+                        logger.warning(f"权限不足，跳过文件 {old_file.name}: {str(e)}")
+                    except Exception as e:
+                        logger.warning(f"迁移文件失败 {old_file.name}: {str(e)}")
+
+            if migrated_count > 0:
+                logger.info(f"迁移完成，共迁移 {migrated_count} 个日志文件")
+
+        except Exception as e:
+            logger.error(f"迁移日志文件时出错: {str(e)}")
+            return -1
+
+        return migrated_count
+
     def _cleanup_duplicate_pytestlog_files(self, log_dir: Path) -> int:
         """清理重复的 pytestlog.json 文件，每个基础名称只保留最新的
 
@@ -1501,6 +1571,8 @@ class ItcLogService:
         1. ITC 日志目录: /opt/coder/statistics/build/aigc_tool/{username}/{project_name}/log
         2. 工作区 logs 目录
 
+        如果新目录不存在或为空，会自动从旧目录迁移日志文件。
+
         Args:
             username: 用户名，如果为None则使用当前系统用户名
 
@@ -1512,6 +1584,12 @@ class ItcLogService:
 
         # 使用 ITC 日志目录
         itc_log_dir = Path(settings.get_aigc_tool_local_log_dir(username))
+
+        # 首次访问时尝试从旧目录迁移日志文件
+        if username not in self._migration_attempted:
+            self._migration_attempted[username] = True
+            self._migrate_old_log_files(username, itc_log_dir)
+
         if itc_log_dir.exists() and itc_log_dir.is_dir():
             logger.info(f"使用 ITC 日志目录: {itc_log_dir}")
             return itc_log_dir
