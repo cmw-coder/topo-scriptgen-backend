@@ -8,12 +8,13 @@
 2. 缓存命中时直接返回，不做任何文件系统检查（O(1)）
 3. 缓存未命中时才使用 glob 搜索（多进程场景下的慢速路径）
 """
-import os
+import glob
 import logging
+import os
 from datetime import datetime
-from typing import Optional
 from pathlib import Path
 from threading import Lock
+from typing import Optional
 
 
 class TaskLogger:
@@ -45,7 +46,6 @@ class TaskLogger:
         扫描日志目录，解析文件名格式：年月日时分秒_taskId.log
         恢复 task_id 到文件名的映射
         """
-        import glob
         from app.core.path_manager import path_manager
 
         try:
@@ -116,7 +116,6 @@ class TaskLogger:
                 return str(task_logs_dir / cached_filename)
 
             # 从文件系统查找已有的日志文件（多进程场景：其他进程创建的文件）
-            import glob
             pattern = str(task_logs_dir / f"*_{task_id}.log")
             existing_files = glob.glob(pattern)
 

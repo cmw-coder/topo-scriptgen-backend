@@ -1,6 +1,8 @@
 
 
 import logging
+import os
+import stat
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -8,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
 
 from app.core.config import settings
 from app.core.path_manager import path_manager
@@ -30,8 +32,6 @@ def _cleanup_logs_directory(logs_dir: Path) -> None:
     Args:
         logs_dir: 日志目录路径
     """
-    import os
-
     try:
         if not logs_dir.exists():
             return
@@ -60,18 +60,15 @@ def _cleanup_logs_directory(logs_dir: Path) -> None:
 def _cleanup_and_init_aigc_tool_directory() -> None:
     """清理并初始化 aigc_tool 目录
 
-    目标目录：/opt/coder/statistics/build/aigc_tool/{username}/
+    目标目录：由 settings.get_aigc_tool_local_dir() 指定
+    格式：/opt/coder/statistics/build/aigc_tool/{username}/{project_name}/
+
     1. 删除目录下所有 .py 脚本文件
     2. 如果不存在 __init__.py 文件则创建
     3. 设置 __init__.py 文件权限为其他用户可读可写 (o+rw)
     """
-    import os
-    import getpass
-    import stat
-
     try:
-        username = getpass.getuser()
-        target_dir = Path(f"/opt/coder/statistics/build/aigc_tool/{username}")
+        target_dir = Path(settings.get_aigc_tool_local_dir())
 
         # 如果目录不存在，创建目录
         if not target_dir.exists():
@@ -172,6 +169,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"工作目录: {path_manager.get_project_root()}")
     logger.info(f"日志目录: {path_manager.get_logs_dir()}")
     logger.info(f"Topox目录: {path_manager.get_topox_dir()}")
+    logger.info("=" * 50)
+
+    # 初始化项目名称（在应用启动时完成，避免多worker竞态条件）
+    logger.info("初始化 AIGC 项目名称...")
+    project_name = settings._get_aigc_project_name()
+    logger.info(f"当前项目名称: {project_name}")
+    logger.info(f"AIGC 工具目录: {settings.get_aigc_tool_local_dir()}")
     logger.info("=" * 50)
 
     # 清理并初始化 aigc_tool 目录
@@ -369,7 +373,6 @@ def create_app() -> FastAPI:
         """根路径，返回前端 index.html"""
         index_file = public_dir / "index.html"
         if index_file.exists():
-            from fastapi.responses import FileResponse
             return FileResponse(str(index_file))
         else:
             raise HTTPException(status_code=404, detail="Frontend not built")
@@ -379,7 +382,6 @@ def create_app() -> FastAPI:
         """pytest-log-view 根路径，返回 index.html"""
         index_file = pytest_log_view_dir / "index.html"
         if index_file.exists():
-            from fastapi.responses import FileResponse
             return FileResponse(str(index_file))
         else:
             raise HTTPException(status_code=404, detail="Pytest-log-view frontend not built")
@@ -394,7 +396,6 @@ def create_app() -> FastAPI:
         """SPA 前端路由的 catch-all，返回 index.html"""
         index_file = public_dir / "index.html"
         if index_file.exists():
-            from fastapi.responses import FileResponse
             return FileResponse(str(index_file))
         else:
             raise HTTPException(status_code=404, detail="Frontend not built")

@@ -1,7 +1,10 @@
-import os
+import getpass
+import json
+import logging
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 
 class Settings:
     """应用配置类
@@ -21,12 +24,14 @@ class Settings:
     # 这个目录会根据运行环境动态调整
     _WORK_DIRECTORY: Optional[Path] = None
 
+    # 全局静态变量 - AIGC 项目名称（用于区分同一用户下的不同项目）
+    _AIGC_PROJECT_NAME: Optional[str] = None
+
     @classmethod
     def get_work_directory(cls) -> str:
         """获取项目工作目录（返回使用正斜杠的字符串路径）"""
         if cls._WORK_DIRECTORY is None:
             # 动态获取当前用户名，构建工作目录路径
-            import getpass
             username = getpass.getuser()
             cls._WORK_DIRECTORY = Path(f"/home/{username}/project")
         # 将路径转换为使用正斜杠的字符串
@@ -67,13 +72,159 @@ class Settings:
     ITC_SERVER_URL: str = "http://10.111.8.68:8000/aigc"
     ITC_REQUEST_TIMEOUT: int = 1200  # 10分钟超时（部署可能需要较长时间）
 
-    # Script command extract 相关设置
+    # AIGC 工具路径配置
+    AIGC_TOOL_LOCAL_BASE: str = "/opt/coder/statistics/build/aigc_tool"
+    AIGC_TOOL_UNC_BASE: str = "//10.144.41.149/webide/aigc_tool"
+
+    @classmethod
+    def _get_aigc_project_name(cls) -> str:
+        """获取或生成 AIGC 项目名称
+
+        - 从 aigc.json 中读取项目名称
+        - 如果不存在则生成新的唯一项目名称并保存
+
+        项目名称格式：proj_<YYMMDDHH>_<8位UUID>，如 proj_25012730_a3b1c2d3
+
+        Returns:
+            str: 项目名称
+        """
+        if cls._AIGC_PROJECT_NAME is not None:
+            return cls._AIGC_PROJECT_NAME
+
+        try:
+            work_dir = Path(cls.get_work_directory())
+            aigc_json_path = work_dir / ".aigc_tool" / "aigc.json"
+
+            # 尝试从 aigc.json 读取项目名称
+            if aigc_json_path.exists():
+                with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                    aigc_config = json.load(f)
+                    project_name = aigc_config.get("aigc_project_name")
+                    if project_name:
+                        cls._AIGC_PROJECT_NAME = project_name
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"从 aigc.json 读取到项目名称: {project_name}")
+                        return project_name
+
+            # 生成新的项目名称
+            timestamp = datetime.now().strftime("%y%m%d%H")
+            short_uuid = str(uuid.uuid4()).split('-')[0][:8]
+            cls._AIGC_PROJECT_NAME = f"proj_{timestamp}_{short_uuid}"
+
+            # 保存到 aigc.json
+            cls._save_aigc_project_name(cls._AIGC_PROJECT_NAME)
+
+            logger = logging.getLogger(__name__)
+            logger.info(f"生成新的 AIGC 项目名称: {cls._AIGC_PROJECT_NAME}")
+
+            return cls._AIGC_PROJECT_NAME
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"获取/生成项目名称失败: {e}，使用默认值")
+            cls._AIGC_PROJECT_NAME = f"proj_default_{datetime.now().strftime('%y%m%d%H')}"
+            return cls._AIGC_PROJECT_NAME
+
+    @classmethod
+    def _save_aigc_project_name(cls, project_name: str) -> None:
+        """保存项目名称到 aigc.json
+
+        Args:
+            project_name: 项目名称
+        """
+        try:
+            work_dir = Path(cls.get_work_directory())
+            aigc_json_path = work_dir / ".aigc_tool" / "aigc.json"
+
+            # 读取现有配置
+            existing_config = {}
+            if aigc_json_path.exists():
+                with open(aigc_json_path, 'r', encoding='utf-8') as f:
+                    existing_config = json.load(f)
+
+            # 更新项目名称
+            existing_config["aigc_project_name"] = project_name
+
+            # 保存
+            aigc_json_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(aigc_json_path, 'w', encoding='utf-8') as f:
+                json.dump(existing_config, f, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"保存项目名称到 aigc.json 失败: {e}")
+
+    @classmethod
+    def get_aigc_tool_local_dir(cls, username: Optional[str] = None) -> str:
+        """获取 AIGC 工具本地目录路径（Linux 服务器本地路径）
+
+        路径格式：/opt/coder/statistics/build/aigc_tool/{username}/{project_name}/
+
+        Args:
+            username: 用户名，如果不提供则使用当前系统用户名
+
+        Returns:
+            str: 本地目录路径
+        """
+        if username is None:
+            username = getpass.getuser()
+        project_name = cls._get_aigc_project_name()
+        return f"{cls.AIGC_TOOL_LOCAL_BASE}/{username}/{project_name}"
+
+    @classmethod
+    def get_aigc_tool_unc_dir(cls, username: Optional[str] = None) -> str:
+        """获取 AIGC 工具 UNC 目录路径（网络共享路径，用于 ITC 部署）
+
+        路径格式：//10.144.41.149/webide/aigc_tool/{username}/{project_name}/
+
+        Args:
+            username: 用户名，如果不提供则使用当前系统用户名
+
+        Returns:
+            str: UNC 目录路径
+        """
+        if username is None:
+            username = getpass.getuser()
+        project_name = cls._get_aigc_project_name()
+        return f"{cls.AIGC_TOOL_UNC_BASE}/{username}/{project_name}"
+
+    @classmethod
+    def get_aigc_tool_local_log_dir(cls, username: Optional[str] = None) -> str:
+        """获取 AIGC 工具日志目录路径
+
+        路径格式：/opt/coder/statistics/build/aigc_tool/{username}/{project_name}/log
+
+        Args:
+            username: 用户名，如果不提供则使用当前系统用户名
+
+        Returns:
+            str: 日志目录路径
+        """
+        return f"{cls.get_aigc_tool_local_dir(username)}/log"
+
+    @classmethod
+    def get_aigc_tool_local_metrics_dir(cls, username: Optional[str] = None) -> str:
+        """获取 AIGC 工具指标目录路径
+
+        路径格式：/opt/coder/statistics/build/aigc_tool/{username}/{project_name}/metrics
+
+        Args:
+            username: 用户名，如果不提供则使用当前系统用户名
+
+        Returns:
+            str: 指标目录路径
+        """
+        return f"{cls.get_aigc_tool_local_dir(username)}/metrics"
+
+    # Script command extract 相关设置（已废弃，使用 get_aigc_tool_local_log_dir 代替）
     @classmethod
     def get_script_command_log_path(cls) -> str:
-        """获取脚本命令日志路径（使用动态用户名）"""
-        import getpass
-        username = getpass.getuser()
-        return f"/opt/coder/statistics/build/aigc_tool/{username}/log"
+        """获取脚本命令日志路径（使用动态用户名）
+
+        .. deprecated::
+            使用 get_aigc_tool_local_log_dir() 代替
+        """
+        return cls.get_aigc_tool_local_log_dir()
 
     # Deploy 日志文件路径
     DEPLOY_LOG_PATH: str = r"D:\Code\green\AIGC\green_test_script_install\ScriptGenerateDev\static\deploy_log.jsonl"
@@ -122,7 +273,7 @@ class Settings:
             from app.services.itc.itc_service import itc_service
             return itc_service._get_exec_ip_from_aigc_json()
         except Exception as e:
-            logger.warning(f"从 aigc.json 读取 executorip 失败: {str(e)}")
+            logging.getLogger(__name__).warning(f"从 aigc.json 读取 executorip 失败: {str(e)}")
             return None
 
     @classmethod
@@ -137,7 +288,7 @@ class Settings:
             from app.services.itc.itc_service import itc_service
             return itc_service._get_device_list_from_aigc_json()
         except Exception as e:
-            logger.warning(f"从 aigc.json 读取 device_list 失败: {str(e)}")
+            logging.getLogger(__name__).warning(f"从 aigc.json 读取 device_list 失败: {str(e)}")
             return None
 
     @classmethod
@@ -178,13 +329,9 @@ class Settings:
         Returns:
             None
         """
-        import logging
         logger = logging.getLogger(__name__)
 
         try:
-            import json
-            from pathlib import Path
-
             work_dir = Path(cls.get_work_directory())
             aigc_json_path = work_dir / ".aigc_tool" / "aigc.json"
 

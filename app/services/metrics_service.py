@@ -3,9 +3,11 @@
 
 负责记录和管理部署流程的统计数据
 """
+import getpass
 import json
-import uuid
 import logging
+import platform
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -32,18 +34,17 @@ class MetricsService:
 
     def _get_metrics_dir(self) -> Path:
         """获取统计文件存储目录（保存到共享目录）"""
-        import getpass
-        import platform
-
         username = getpass.getuser()
 
         # 根据操作系统选择共享目录路径
         if platform.system() == "Windows":
-            # Windows 网络共享路径
-            base_dir = Path(f"\\\\10.144.41.149\\webide\\aigc_tool\\{username}\\metrics")
+            # Windows 网络共享路径（将 UNC 路径转换为 Windows 格式）
+            unc_dir = settings.get_aigc_tool_unc_dir(username)
+            # 将 //10.144.41.149/webide/aigc_tool/{username} 转换为 \\10.144.41.149\webide\aigc_tool\{username}
+            base_dir = Path(unc_dir.replace("/", "\\") + "\\metrics")
         else:
             # Linux 共享目录路径
-            base_dir = Path(f"/opt/coder/statistics/build/aigc_tool/{username}/metrics")
+            base_dir = Path(settings.get_aigc_tool_local_metrics_dir(username))
 
         try:
             base_dir.mkdir(parents=True, exist_ok=True)
@@ -63,7 +64,6 @@ class MetricsService:
 
     def _get_username(self) -> str:
         """获取当前用户名"""
-        import getpass
         return getpass.getuser()
 
     def get_current_flow_id(self, username: str) -> Optional[str]:

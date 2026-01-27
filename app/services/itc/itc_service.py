@@ -1,13 +1,20 @@
-import httpx
-import logging
-import glob
-import os
+import asyncio
+import aiofiles
 import getpass
-import shutil
+import glob
+import httpx
 import json
+import logging
+import os
+import shutil
+import socket
+import threading
+import traceback
 from datetime import datetime
-from typing import Optional, Dict, Any, List
 from pathlib import Path
+from typing import Optional, Dict, Any, List
+from urllib.parse import urlparse
+
 from app.core.config import settings
 from app.models.itc.itc_models import (
     NewDeployRequest,
@@ -36,7 +43,6 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         logger.info(f"请求超时设置: {self.timeout}秒")
 
         # 显示 JSON 序列化后的数据（用于调试转义）
-        import json
         json_data = json.dumps(data, ensure_ascii=False, indent=2)
         logger.info(f"JSON 序列化后的数据:\n{json_data}")
 
@@ -70,7 +76,6 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             }
         except Exception as e:
             # 记录完整的异常信息，包括类型、消息和堆栈
-            import traceback
             error_type = type(e).__name__
             error_msg = str(e) if str(e) else "(空错误消息)"
             error_trace = traceback.format_exc()
@@ -810,7 +815,7 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             return local_dir
 
     def _copy_topox_to_shared_folder(self, topox_file_path: str) -> str:
-        """将指定的 topox 文件拷贝到 /opt/coder/statistics/build/aigc_tool/{username}/ 目录
+        """将指定的 topox 文件拷贝到 settings.get_aigc_tool_local_dir() 目录
 
         Args:
             topox_file_path: 本地 topox 文件的完整路径
@@ -819,10 +824,8 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             拷贝后的目标目录路径
         """
         try:
-            username = getpass.getuser()
-
-            # 目标目录：/opt/coder/statistics/build/aigc_tool/{username}/
-            target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
+            # 目标目录：由 settings.get_aigc_tool_local_dir() 指定
+            target_dir = settings.get_aigc_tool_local_dir()
             os.makedirs(target_dir, exist_ok=True)
 
             logger.info(f"准备拷贝 topox 文件到: {target_dir}")
@@ -899,9 +902,6 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
     async def _test_itc_connection(self) -> bool:
         """测试 ITC 服务器连接是否正常"""
         try:
-            import socket
-            from urllib.parse import urlparse
-
             parsed_url = urlparse(self.base_url)
             host = parsed_url.hostname
             port = parsed_url.port or 80
@@ -938,8 +938,6 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             default_topox_file: 默认 topox 文件路径
             unc_topofile: UNC 网络路径
         """
-        import asyncio
-
         async def _deploy_task():
             try:
                 logger.info("=" * 80)
@@ -1056,7 +1054,6 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
                     # ========== 统计：记录部署完成时间 ==========
                     try:
                         from app.services.metrics_service import metrics_service
-                        from datetime import datetime
                         metrics_service.record_deploy_complete(datetime.now())
                     except Exception as metrics_error:
                         logger.warning(f"记录部署完成时间失败: {metrics_error}")
@@ -1182,8 +1179,6 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
             default_topox_file: 默认 topox 文件路径
             unc_topofile: UNC 网络路径
         """
-        import threading
-
         # 在新线程中执行后台任务
         thread = threading.Thread(
             target=self._execute_deploy_background,
@@ -1200,16 +1195,13 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
         1. 删除目标目录下所有 conftest.py 和 test_ 开头的 .py 文件
         2. 从工作目录拷贝 test_*.py 和 conftest.py 到目标目录
 
-        目标目录：/opt/coder/statistics/build/aigc_tool/{username}/
+        目标目录：由 settings.get_aigc_tool_local_dir() 指定
 
         Returns:
             str: 目标目录路径
         """
         try:
-            import glob
-
-            username = getpass.getuser()
-            target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
+            target_dir = settings.get_aigc_tool_local_dir()
 
             # 创建目标目录
             os.makedirs(target_dir, exist_ok=True)
@@ -1421,14 +1413,93 @@ AI_FingerPrint_UUID: 20251224-0v1bChBB
 class ItcLogService:
     """ITC日志文件服务类"""
 
-    def __init__(self):
-        """初始化ITC日志服务"""
-        self.itc_log_base_path = "/opt/coder/statistics/build/aigc_tool"
+    # 类变量：记录每个用户上次清理的日期 {username: last_cleanup_date}
+    _last_cleanup_date: Dict[str, str] = {}
+
+    def _cleanup_duplicate_pytestlog_files(self, log_dir: Path) -> int:
+        """清理重复的 pytestlog.json 文件，每个基础名称只保留最新的
+
+        文件名格式: {basename}_YYYY-MM-DD_HH-MM-SS_{random}.pytestlog.json
+        例如: test_case_1_2026-01-07_14-11-33_73822.pytestlog.json
+                  setup_2026-01-07_19-41-39_14465.pytestlog.json
+                  teardown_2025-12-29_10-53-30_64632.pytestlog.json
+
+        对于相同 basename 的文件，只保留修改时间最新的。
+        不处理 .log 文件。
+
+        Args:
+            log_dir: 日志目录路径
+
+        Returns:
+            int: 删除的文件数量
+        """
+        import re
+
+        cleaned_count = 0
+
+        try:
+            # 正则表达式匹配文件名中的基础名称部分
+            # 格式: {basename}_YYYY-MM-DD_HH-MM-SS_{random}.pytestlog.json
+            pattern = re.compile(r'^(.+?)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_.*\.pytestlog\.json$')
+
+            # 收集所有 pytestlog.json 文件，按基础名称分组
+            files_by_basename: Dict[str, List[Path]] = {}
+
+            for file_path in log_dir.iterdir():
+                if file_path.is_file() and file_path.name.endswith(".pytestlog.json"):
+                    match = pattern.match(file_path.name)
+                    if match:
+                        basename = match.group(1)
+                    else:
+                        # 如果不匹配标准格式，使用完整文件名（不含扩展名）作为 basename
+                        basename = file_path.name.replace(".pytestlog.json", "")
+
+                    if basename not in files_by_basename:
+                        files_by_basename[basename] = []
+                    files_by_basename[basename].append(file_path)
+
+            # 对每个基础名称，只保留最新的文件
+            for basename, files in files_by_basename.items():
+                if len(files) > 1:
+                    # 按修改时间排序，保留最新的
+                    files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+                    files_to_delete = files[1:]
+
+                    for file_to_delete in files_to_delete:
+                        try:
+                            file_to_delete.unlink()
+                            cleaned_count += 1
+                            logger.info(f"删除重复的 pytestlog.json 文件: {file_to_delete.name} (basename: {basename}, 保留最新的)")
+                        except Exception as e:
+                            logger.warning(f"删除文件失败 {file_to_delete.name}: {str(e)}")
+
+            if cleaned_count > 0:
+                logger.info(f"清理完成，共删除 {cleaned_count} 个重复的 pytestlog.json 文件")
+
+        except Exception as e:
+            logger.warning(f"清理重复文件时出错: {str(e)}")
+
+        return cleaned_count
+
+    def _should_cleanup_today(self, username: str) -> bool:
+        """检查今天是否已经清理过
+
+        Args:
+            username: 用户名
+
+        Returns:
+            bool: 如果今天还没有清理过则返回 True
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        last_cleanup = self._last_cleanup_date.get(username)
+        return last_cleanup != today
 
     def _get_user_log_dir(self, username: Optional[str] = None) -> Path:
         """获取用户的ITC日志目录
 
-        优先使用 ITC 服务器日志目录，如果不存在则使用工作区 logs 目录
+        优先级顺序:
+        1. ITC 日志目录: /opt/coder/statistics/build/aigc_tool/{username}/{project_name}/log
+        2. 工作区 logs 目录
 
         Args:
             username: 用户名，如果为None则使用当前系统用户名
@@ -1436,14 +1507,11 @@ class ItcLogService:
         Returns:
             Path: 用户ITC日志目录的完整路径
         """
-        # 使用 ITC 日志目录: /opt/coder/statistics/build/aigc_tool/{username}/log/
         if username is None:
-            import getpass
             username = getpass.getuser()
 
-        itc_log_dir = Path(self.itc_log_base_path) / username / "log"
-
-        # 检查 ITC 日志目录是否存在
+        # 使用 ITC 日志目录
+        itc_log_dir = Path(settings.get_aigc_tool_local_log_dir(username))
         if itc_log_dir.exists() and itc_log_dir.is_dir():
             logger.info(f"使用 ITC 日志目录: {itc_log_dir}")
             return itc_log_dir
@@ -1461,6 +1529,8 @@ class ItcLogService:
 
         对于 .pytestlog.json 后缀的文件，会解析其中的 Result 和 elapsed_time 属性
 
+        每天第一次调用时会清理重复的 pytestlog.json 文件，只保留每个文件名最新的。
+
         Args:
             username: 用户名，如果为None则使用当前系统用户名
 
@@ -1472,7 +1542,17 @@ class ItcLogService:
                 - statistics: 统计信息（仅.pytestlog.json文件），包含 result_counts 和 total_elapsed_time
         """
         try:
+            if username is None:
+                username = getpass.getuser()
+
             log_dir = self._get_user_log_dir(username)
+
+            # 每天第一次调用时清理重复的 pytestlog.json 文件
+            if self._should_cleanup_today(username):
+                logger.info(f"执行每日清理: 删除重复的 pytestlog.json 文件")
+                self._cleanup_duplicate_pytestlog_files(log_dir)
+                # 更新最后清理日期
+                self._last_cleanup_date[username] = datetime.now().strftime("%Y-%m-%d")
 
             # 检查目录是否存在，如果不存在则创建
             if not log_dir.exists():
@@ -1675,8 +1755,6 @@ class ItcLogService:
                 - data: 包含文件信息的字典，失败时为None
         """
         try:
-            import aiofiles
-
             # 验证文件名安全性，防止路径遍历攻击
             if "/" in filename or "\\" in filename or ".." in filename:
                 logger.warning(f"检测到非法文件名: {filename}")

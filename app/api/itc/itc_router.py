@@ -1,3 +1,12 @@
+from datetime import datetime
+import getpass
+import glob
+import logging
+import os
+import shutil
+import traceback
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query
 from app.models.itc.itc_models import (
     NewDeployRequest,
@@ -36,15 +45,12 @@ async def deploy_environment(request: NewDeployRequest):
 
     """
     try:
-        import getpass
         from app.services.itc.itc_service import itc_service
-        import logging
 
         # 初始化 logger
         logger = logging.getLogger(__name__)
 
         # ========== 统计：记录调用deploy时间 ==========
-        from datetime import datetime
         deploy_call_time = datetime.now()
         try:
             from app.services.metrics_service import metrics_service
@@ -57,20 +63,15 @@ async def deploy_environment(request: NewDeployRequest):
         username = getpass.getuser()
 
         # 查找 topox 文件并获取路径信息
-        from app.core.config import settings
-        import os
-
         work_dir = settings.get_work_directory()
 
         # 只检查工作目录根目录下的 topox 文件
-        import glob
         pattern = os.path.join(work_dir, "*.topox")
         topox_files = glob.glob(pattern)
 
         if topox_files:
             # 如果存在 topox 文件，调用 topo_service 的 _copy_to_aigc_target 函数拷贝
             from app.services.topo_service import topo_service
-            from pathlib import Path
 
             default_topox_file = topox_files[0]
             topox_path = Path(default_topox_file)
@@ -84,7 +85,7 @@ async def deploy_environment(request: NewDeployRequest):
                 logger.warning(f"拷贝 topox 文件到 AIGC 目标目录失败: {str(copy_error)}")
 
             # 使用 UNC 路径用于部署
-            unc_topofile = f"//10.144.41.149/webide/aigc_tool/{username}"
+            unc_topofile = settings.get_aigc_tool_unc_dir(username)
         else:
             # 不存在 topox 文件，使用旧的逻辑查找
             test_scripts_dir = os.path.join(work_dir, "test_scripts")
@@ -103,7 +104,7 @@ async def deploy_environment(request: NewDeployRequest):
             default_topox_file = topox_files[0]
 
             # 使用旧的 UNC 路径格式（不包含文件名）
-            unc_topofile = f"//10.144.41.149/webide/aigc_tool/{username}"
+            unc_topofile = settings.get_aigc_tool_unc_dir(username)
 
 
         # 持久化保存 versionPath 和 deviceType 到 aigc.json 文件
@@ -129,7 +130,6 @@ async def deploy_environment(request: NewDeployRequest):
         raise
     except Exception as e:
         # 返回原始异常信息，包括类型和详细堆栈信息
-        import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"提交部署任务失败: {error_detail}")
 
@@ -157,7 +157,6 @@ async def get_deploy_info():
             }
         )
     except Exception as e:
-        import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"获取部署信息失败: {error_detail}")
 
@@ -182,7 +181,6 @@ async def read_file_or_directory(
         raise
     except Exception as e:
         # 返回原始异常信息
-        import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"读取失败: {error_detail}")
 
@@ -198,7 +196,7 @@ async def run_script(request: RunSingleScriptRequest):
     - **script_path**: 要运行的脚本文件名（如 conftest.py、test_xxx.py）
 
     自动使用：
-    - scriptspath: 固定路径 //10.144.41.149/webide/aigc_tool/{username}
+    - scriptspath: 由 settings.get_aigc_tool_unc_dir() 指定的 UNC 路径
     - executorip: 从部署的设备列表中自动获取
 
     在运行前会自动：
@@ -207,13 +205,6 @@ async def run_script(request: RunSingleScriptRequest):
     - 设置目录权限为 755，文件权限为 644
     """
     try:
-        from app.core.config import settings
-        import os
-        import shutil
-        import glob
-        import getpass
-        import logging
-
         logger = logging.getLogger(__name__)
 
         # 从全局变量获取 executorip（取第一个设备的）
@@ -232,7 +223,7 @@ async def run_script(request: RunSingleScriptRequest):
         username = getpass.getuser()
 
         # 使用本地路径作为目标目录
-        target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
+        target_dir = settings.get_aigc_tool_local_dir(username)
 
         # 确保目标目录存在
         os.makedirs(target_dir, exist_ok=True)
@@ -314,9 +305,9 @@ async def run_script(request: RunSingleScriptRequest):
         copy_info = f"已删除 {len(deleted_files)} 个旧文件，已拷贝 {len(copied_files)} 个文件: {', '.join(copied_files)}"
 
         # 构造请求
-        from app.models.itc.itc_models import RunScriptRequest as ItcRunRequest
-        itc_request = ItcRunRequest(
-            scriptspath=f"//10.144.41.149/webide/aigc_tool/{username}",
+        from app.models.itc.itc_models import RunScriptRequest
+        itc_request = RunScriptRequest(
+            scriptspath=settings.get_aigc_tool_unc_dir(username),
             executorip=executorip
         )
 
@@ -343,7 +334,6 @@ async def run_script(request: RunSingleScriptRequest):
         raise
     except Exception as e:
         # 返回原始异常信息
-        import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"运行脚本失败: {error_detail}")
 
@@ -375,7 +365,6 @@ async def undeploy_environment(request: ExecutorRequest):
         raise
     except Exception as e:
         # 返回原始异常信息
-        import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"释放环境失败: {error_detail}")
 
@@ -407,7 +396,6 @@ async def restore_configuration(request: ExecutorRequest):
         raise
     except Exception as e:
         # 返回原始异常信息
-        import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"配置回滚失败: {error_detail}")
 
@@ -439,7 +427,6 @@ async def suspend_script(request: ExecutorRequest):
         raise
     except Exception as e:
         # 返回原始异常信息
-        import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"暂停脚本失败: {error_detail}")
 
@@ -471,7 +458,6 @@ async def resume_script(request: ExecutorRequest):
         raise
     except Exception as e:
         # 返回原始异常信息
-        import traceback
         error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=f"恢复脚本失败: {error_detail}")
 
@@ -482,7 +468,7 @@ async def resume_script(request: ExecutorRequest):
 async def get_itc_log_files():
     """获取ITC日志文件列表
 
-    返回当前用户的ITC日志目录(/opt/coder/statistics/build/aigc_tool/{username}/log/)下的所有文件列表
+    返回当前用户的ITC日志目录(settings.get_aigc_tool_local_log_dir())下的所有文件列表
     自动使用当前系统用户名，无需传递参数
 
     对于 .pytestlog.json 文件，会额外解析其中的 Result 和 elapsed_time 属性，并在响应中返回统计信息

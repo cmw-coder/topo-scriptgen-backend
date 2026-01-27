@@ -2,9 +2,12 @@
 用户上下文管理工具
 用于获取用户名并将其保存为全局环境变量
 """
-import os
 import getpass
+import logging
+import os
 from typing import Optional
+
+from app.core.config import settings
 
 class UserContext:
     """用户上下文管理器"""
@@ -23,9 +26,8 @@ class UserContext:
 
     @classmethod
     def get_aigc_target_dir(cls) -> str:
-        """获取 AIGC 工具的目标目录"""
-        username = cls.get_username()
-        return f"/opt/coder/statistics/build/aigc_tool/{username}"
+        """获取 AIGC 工具的目标目录（本地路径）"""
+        return settings.get_aigc_tool_local_dir(cls.get_username())
 
     @classmethod
     def set_permissions_recursive(cls, path, mode, silent=False):
@@ -94,7 +96,6 @@ class UserContext:
         Returns:
             bool: 是否成功创建并设置权限
         """
-        import logging
         logger = logging.getLogger(__name__)
 
         try:

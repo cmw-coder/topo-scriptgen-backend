@@ -4,15 +4,19 @@
 提供脚本生成、回写、拷贝和ITC执行的完整业务逻辑
 """
 import asyncio
-import os
-import sys
-import shutil
-import glob
+import concurrent.futures
 import getpass
-import tempfile
+import glob
+import json
 import logging
-from typing import Dict, Any, Optional
+import os
+import shutil
+import sys
+import tempfile
+import traceback
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, Optional
 
 from app.core.config import settings
 from app.services.claude_api.task_manager import task_manager
@@ -127,7 +131,6 @@ class ScriptGenerationService:
             # 注意：execute_copy_and_itc_run 会写入任务结束标识，这里不需要重复写入
 
         except Exception as e:
-            import traceback
             self.logger.error(f"Task {task_id}: 完整流程执行失败: {str(e)}\n{traceback.format_exc()}")
 
             # 发送错误消息
@@ -228,7 +231,6 @@ class ScriptGenerationService:
                 self._send_message(task_id, "info", "正在执行脚本回写，请稍候...", "processing")
 
                 # 由于 command_write_back.main() 是同步函数，我们在线程池中运行它
-                import concurrent.futures
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, command_write_back.main)
 
@@ -246,8 +248,7 @@ class ScriptGenerationService:
             self.logger.info(f"Task {task_id}: 拷贝修改后的脚本到目标目录")
             self._send_message(task_id, "info", "===== 第5步：拷贝修改后的脚本到目标目录 =====", "processing")
 
-            username = getpass.getuser()
-            target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
+            target_dir = settings.get_aigc_tool_local_dir()
 
             # 创建目标目录
             os.makedirs(target_dir, exist_ok=True)
@@ -330,7 +331,6 @@ class ScriptGenerationService:
             task_logger.write_end_log(task_id, "completed")
 
         except Exception as e:
-            import traceback
             error_msg = f"脚本回写任务执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
             self.logger.error(f"Task {task_id}: {error_msg}")
 
@@ -355,8 +355,7 @@ class ScriptGenerationService:
             self.logger.info(f"Task {task_id}: 拷贝脚本到指定目录")
             self._send_message(task_id, "info", "===== 第5步：拷贝脚本到指定目录 =====", "processing")
 
-            username = getpass.getuser()
-            target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
+            target_dir = settings.get_aigc_tool_local_dir()
 
             # 创建目标目录
             os.makedirs(target_dir, exist_ok=True)
@@ -424,7 +423,6 @@ class ScriptGenerationService:
                 # 过滤掉虚拟环境等目录中的文件
                 for match in matches:
                     # 检查路径中是否包含过滤的目录名
-                    from pathlib import Path
                     path_parts = Path(match).parts
                     if not any(part.lower() in filtered_dirs for part in path_parts):
                         conftest_file = match
@@ -518,7 +516,7 @@ class ScriptGenerationService:
             self._send_message(task_id, "info", f"✓ 执行机IP: {executorip}", "processing")
 
             # 构造 UNC 路径
-            unc_path = f"//10.144.41.149/webide/aigc_tool/{username}"
+            unc_path = settings.get_aigc_tool_unc_dir()
             self._send_message(task_id, "info", f"✓ 脚本UNC路径: {unc_path}", "processing")
 
             # 调用 ITC 服务
@@ -544,7 +542,6 @@ class ScriptGenerationService:
 
             if return_code == "200":
                 # 成功
-                import json
                 result_message = f"✓ ITC 执行成功\n\n返回信息:\n{json.dumps(return_info, ensure_ascii=False, indent=2)}"
                 self._send_message(task_id, "success", result_message, "end")
                 self._update_task_status(task_id, "completed")
@@ -553,7 +550,6 @@ class ScriptGenerationService:
                 task_logger.write_end_log(task_id, "completed")
             else:
                 # 失败
-                import json
                 error_message = f"✗ ITC 执行失败 (错误码: {return_code})\n\n错误信息:\n{json.dumps(return_info, ensure_ascii=False, indent=2)}"
                 self._send_message(task_id, "error", error_message, "end")
                 self._update_task_status(task_id, "failed")
@@ -564,7 +560,6 @@ class ScriptGenerationService:
             self.logger.info(f"Task {task_id}: 任务完成")
 
         except Exception as e:
-            import traceback
             error_msg = f"拷贝和执行脚本失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
             self.logger.error(f"Task {task_id}: {error_msg}")
             self._update_task_status(task_id, "failed")
@@ -671,8 +666,7 @@ class ScriptGenerationService:
 
             # 拷贝 conftest.py 到指定目录
             try:
-                username = getpass.getuser()
-                target_dir = f"/opt/coder/statistics/build/aigc_tool/{username}"
+                target_dir = settings.get_aigc_tool_local_dir()
                 os.makedirs(target_dir, exist_ok=True)
 
                 # 查找 workspace 中的 conftest.py 文件
@@ -788,8 +782,7 @@ class ScriptGenerationService:
             task_logger.write_log(task_id, f"ℹ️ 执行机IP: {executorip}")
 
             # 构造脚本路径
-            username = getpass.getuser()
-            scriptspath = f"//10.144.41.149/webide/aigc_tool/{username}"
+            scriptspath = settings.get_aigc_tool_unc_dir()
 
             task_logger.write_log(task_id, f"ℹ️ 脚本路径: {scriptspath}")
             task_logger.write_log(task_id, "⏳ 正在调用 ITC run 接口...")
@@ -895,8 +888,7 @@ class ScriptGenerationService:
                 task_logger.write_log(task_id, f"ℹ️ 执行机IP: {executorip}")
 
                 # 构造脚本路径
-                username = getpass.getuser()
-                scriptspath = f"//10.144.41.149/webide/aigc_tool/{username}"
+                scriptspath = settings.get_aigc_tool_unc_dir()
 
                 task_logger.write_log(task_id, f"ℹ️ 脚本路径: {scriptspath}")
                 task_logger.write_log(task_id, "⏳ 正在调用 ITC run 接口...")
@@ -943,7 +935,6 @@ class ScriptGenerationService:
 
         # 最外面的try
         except Exception as e:
-            import traceback
             error_msg = f"自动化测试流程执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
             self.logger.error(f"Task {task_id}: {error_msg}")
 
