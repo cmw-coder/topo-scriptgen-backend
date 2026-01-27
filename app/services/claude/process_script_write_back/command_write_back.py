@@ -1391,6 +1391,33 @@ def copy_temp_and_prototype(source_path):
         return success > 0
 
 
+def remove_specific_string_by_file(input_filename, string_to_remove, output_filename=None):
+    """
+    从文件中删除特定字符串
+    
+    参数:
+        input_filename: str - 输入文件路径
+        string_to_remove: str - 要删除的字符串
+        output_filename: str - 输出文件路径（可选，默认为覆盖原文件）
+    """
+    if output_filename is None:
+        output_filename = input_filename
+    
+    try:
+        with open(input_filename, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 删除指定字符串
+        modified_content = content.replace(string_to_remove, '')
+        
+        with open(output_filename, 'w', encoding='utf-8') as f:
+            f.write(modified_content)
+        
+        print(f"成功从 {input_filename} 中删除字符串: '{string_to_remove}'")
+    except Exception as e:
+        print(f"删除字符串失败：{e}")
+
+
 def replace_return_with_ctrlz_by_file(input_filename, output_filename=None):
     """
     从指定文件读取文本，将独立单词return替换为ctrl+z（#/!开头行不处理），并写入文件
@@ -1561,6 +1588,10 @@ def main():
     # 把return还原为ctrl+z
     replace_return_with_ctrlz_by_file(file2)
     replace_return_with_ctrlz_by_file(file3)
+
+    # 删除文件中的"命令执行失败: "字符串
+    remove_specific_string_by_file(file2, "命令执行失败: ")
+    remove_specific_string_by_file(file3, "命令执行失败: ")
 
     # itc日志会把setup_class转为setup, teardown_class转为teardown, 此处转回去
     replace_setup_teardown(temp_path)
