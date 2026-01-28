@@ -18,9 +18,7 @@ class AIGCClient:
         self.base_url = base_url
 
     def decode_base64_in_json(self, data):
-        """递归解码 JSON 中的 Base64 编码字段
-        AI_FingerPrint_UUID: 20251128-wH7yz8Qk
-        """
+        """递归解码 JSON 中的 Base64 编码字段"""
         if isinstance(data, dict):
             for key, value in data.items():
                 if isinstance(value, str):
@@ -40,9 +38,7 @@ class AIGCClient:
                 self.decode_base64_in_json(item)
 
     def check_contains_fail(self, data):
-        """检查数据结构中是否包含FAIL或ERROR信息
-        AI_FingerPrint_UUID: 20251128-wH7yz8Qk
-        """
+        """检查数据结构中是否包含FAIL或ERROR信息"""
         if isinstance(data, dict):
             for key, value in data.items():
                 if key == "Result" and value in ["FAIL", "ERROR"]:
@@ -56,9 +52,9 @@ class AIGCClient:
         return False
 
     def filter_pass_results(self, data):
-        """过滤掉详细的成功执行步骤，但保留测试框架和主要信息
+        """
+        过滤掉详细的成功执行步骤，但保留测试框架和主要信息
         保留FAIL和ERROR信息，过滤PASS信息
-        AI_FingerPrint_UUID: 20251128-wH7yz8Qk
         """
         # 对于字符串，检查是否需要Base64解码
         if isinstance(data, str):

@@ -21,6 +21,7 @@ from typing import Dict, Any, Optional
 from app.core.config import settings
 from app.services.claude_api.task_manager import task_manager
 from app.services.claude_api.task_logger import task_logger
+from app.utils import add_aifinger_hook
 
 
 class ScriptGenerationService:
@@ -239,6 +240,15 @@ class ScriptGenerationService:
             finally:
                 # 恢复旧的 sys.argv
                 sys.argv = old_argv
+
+            # 添加AI指纹到回写后的脚本
+            try:
+                uuid = add_aifinger_hook.generate_unique_id()
+                success, _ = add_aifinger_hook.add_fingerprint_to_file(script_full_path, uuid)
+                if success:
+                    self.logger.info(f"Task {task_id}: 已为回写脚本添加AI指纹: {uuid}")
+            except Exception as fingerprint_err:
+                self.logger.warning(f"Task {task_id}: 添加AI指纹失败: {str(fingerprint_err)}")
 
             # ========== 第4步：清理临时文件 ==========
             self.logger.info(f"Task {task_id}: 清理临时文件")
@@ -708,6 +718,15 @@ class ScriptGenerationService:
 
                     self.logger.info(f"Task {task_id}: conftest.py 已拷贝到 {target_conftest}")
                     send_message_log("info", f"✓ conftest.py 已备份到: {target_conftest}", "conftest生成")
+
+                    # 添加AI指纹到 conftest.py
+                    try:
+                        uuid = add_aifinger_hook.generate_unique_id()
+                        success, _ = add_aifinger_hook.add_fingerprint_to_file(target_conftest, uuid)
+                        if success:
+                            self.logger.info(f"Task {task_id}: 已为 conftest.py 添加AI指纹: {uuid}")
+                    except Exception as fingerprint_err:
+                        self.logger.warning(f"Task {task_id}: 添加AI指纹失败: {str(fingerprint_err)}")
                 else:
                     self.logger.warning(f"Task {task_id}: 在 {workspace} 中未找到 conftest.py 文件")
                     send_message_log("warning", f"⚠ 未找到 conftest.py 文件，跳过备份", "conftest生成")
@@ -761,6 +780,35 @@ class ScriptGenerationService:
 
             self.logger.info(f"Task {task_id}: 测试脚本生成完成，共处理 {message_count} 条消息")
             task_logger.write_log(task_id, f"✓ 测试脚本生成完成 (处理了 {message_count} 条消息)")
+
+            # 添加AI指纹到生成的测试脚本
+            try:
+                import time
+
+                # 查找 workspace 中最近生成的 test_*.py 文件
+                recent_threshold = time.time() - 900  # 最近15分钟
+                test_files = []
+                for root, dirs, files in os.walk(workspace):
+                    # 跳过虚拟环境目录
+                    dirs[:] = [d for d in dirs if d.lower() not in
+                              ('venv', '.venv', 'env', '.env', '__pycache__', '.git')]
+                    for file in files:
+                        if file.startswith('test_') and file.endswith('.py'):
+                            file_path = os.path.join(root, file)
+                            try:
+                                if os.path.getctime(file_path) >= recent_threshold:
+                                    test_files.append(file_path)
+                            except OSError:
+                                pass
+
+                if test_files:
+                    results = add_aifinger_hook.add_fingerprint_to_files(test_files)
+                    success_count = sum(1 for v in results.values() if v)
+                    self.logger.info(f"Task {task_id}: 已为 {success_count}/{len(test_files)} 个测试脚本添加AI指纹")
+                    if success_count > 0:
+                        self.logger.info(f"✓ 已为 {success_count} 个测试脚本添加AI指纹")
+            except Exception as fingerprint_err:
+                self.logger.warning(f"Task {task_id}: 添加测试脚本AI指纹失败: {str(fingerprint_err)}")
 
             # ========== 阶段3: 调用 ITC run 接口执行脚本 ==========
             self.logger.info(f"Task {task_id}: 开始调用 ITC run 接口")

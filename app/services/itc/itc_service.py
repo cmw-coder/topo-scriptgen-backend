@@ -26,9 +26,7 @@ from app.models.itc.itc_models import (
 logger = logging.getLogger(__name__)
 
 class ITCService:
-    """ITC API 代理服务
-AI_FingerPrint_UUID: 20251224-0v1bChBB
-"""
+    """ITC API 代理服务"""
 
     def __init__(self):
         self.base_url = settings.ITC_SERVER_URL
