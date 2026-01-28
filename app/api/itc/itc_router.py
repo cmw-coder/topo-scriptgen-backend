@@ -211,9 +211,17 @@ async def run_script(request: RunSingleScriptRequest):
         executorip = settings.get_deploy_executor_ip()
 
         if not executorip:
+            error_msg = "未找到部署的设备，请先部署组网占用环境"
+            # 更新 aigc.json 中的 ITC 状态为 error
+            itc_service._save_itc_run_result({
+                "return_code": "400",
+                "return_info": error_msg,
+                "result": None
+            })
+            logger.error(f"未找到执行机IP: {error_msg}")
             raise HTTPException(
                 status_code=400,
-                detail="未找到部署的设备，请先调用 /deploy 接口部署环境"
+                detail=error_msg
             )
 
         # 获取工作目录
