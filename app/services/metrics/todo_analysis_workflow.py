@@ -113,7 +113,7 @@ async def stream_analyze_todo_with_agent(log_path: str, workspace: str, export_f
     print(f"🚀 发送 Agent 请求，要求保存为: {export_file}")
     
     
-    prompt_text = f"调用skill : agent_log_analysis, 分析的todo日志\n, \n 读取{log_path}\n\n 请分析这些 Todo 日志，提供详细的分析报告。\n 【重要任务】将分析结果保存为 JSON 格式文件，文件名为: {export_file}。\n 注意：你当前的工作目录已经是 '{workspace}' 文件夹，请直接写入该文件名，不要创建任何父级目录。"
+    prompt_text = f"调用skill : todo_log_analysis, 分析的todo日志\n, \n 读取{log_path}\n\n 请分析这些 Todo 日志，提供详细的分析报告。\n 【重要任务】将分析结果保存为 JSON 格式文件，文件名为: {export_file}。\n 注意：你当前的工作目录已经是 '{workspace}' 文件夹，请直接写入该文件名，不要创建任何父级目录。"
 
     
 
