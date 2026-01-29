@@ -1001,9 +1001,9 @@ async def command_to_func_parallel_task(func_name, old_command, new_command, fun
     # 调用connect.py的异步函数生成function.py
     import connect
 
-    relative_path = "../"
-    target_folder = os.path.abspath(os.path.join(func_revert_dir, relative_path))
-    result = await connect.process_convert_folder(target_folder, 5)
+    #relative_path = "../"
+    #target_folder = os.path.abspath(os.path.join(func_revert_dir, relative_path))
+    result = await connect.process_convert_folder(func_revert_dir, 5)
     print(f"处理结果: {result}")
     
     # 修复缩进
@@ -1018,12 +1018,13 @@ async def command_to_func_parallel_task(func_name, old_command, new_command, fun
     }
 
 
-async def command_to_func_parallel_run(tasks):
-    results = await asyncio.gather(*tasks)
-    return results
+async def _wrapped_task(semaphore, func_name, old_command, new_command, func_revert_dir):
+    async with semaphore:
+        return await command_to_func_parallel_task(
+            func_name, old_command, new_command, func_revert_dir
+        )
 
-
-def command_to_func_parallel(test_script, new_command, old_command, diff_command_list):
+async def command_to_func_parallel_async(test_script, new_command, old_command, diff_command_list):
     """
     并行版本的command_to_func函数
     
@@ -1049,11 +1050,14 @@ def command_to_func_parallel(test_script, new_command, old_command, diff_command
     
     # 阶段1：并行处理所有函数，生成各自的function.py文件
     tasks = []
+    max_concurrency = 5  # 自行设置并发上限
+    semaphore = asyncio.Semaphore(max_concurrency)
+
     for func_name in diff_command_list:
         # 为每个函数创建独立的revert目录，结构为 "时间前缀_函数名称/revert"
         time_dir = os.path.abspath(os.path.join(main_revert_dir, f"{time_prefix}"))
-        func_dir = os.path.abspath(os.path.join(main_revert_dir, f"{time_dir}", f"{func_name}"))
-        func_revert_dir = os.path.abspath(os.path.join(func_dir, "revert"))
+        func_dir = os.path.join(time_dir, func_name)
+        func_revert_dir = os.path.join(func_dir, "revert")
         
         # 创建函数专属的revert目录结构
         os.makedirs(func_revert_dir, exist_ok=True)
@@ -1063,7 +1067,8 @@ def command_to_func_parallel(test_script, new_command, old_command, diff_command
         files_to_copy = [
             os.path.join(main_revert_dir, "prototype_script.py"),
             os.path.join(main_revert_dir, "mapping.json"),
-            os.path.join(main_revert_dir, "注意事项.md")
+            os.path.join(main_revert_dir, "注意事项.md"),
+            os.path.join(main_revert_dir, "SKILL.md")
         ]
 
         # 复制文件revert下面的文件
@@ -1075,17 +1080,17 @@ def command_to_func_parallel(test_script, new_command, old_command, diff_command
                 print(f"⚠️ 文件不存在：{file_path}，跳过复制")
 
         # 复制SKILL.md文件
-        func_skill_md = os.path.abspath(os.path.join(func_dir, "SKILL.md"))
-        if os.path.exists(main_skill_md):
-            shutil.copy2(main_skill_md, func_skill_md)
-            print(f"✅ 复制文件：{main_skill_md} → {func_skill_md}")
+        #func_skill_md = os.path.abspath(os.path.join(func_dir, "SKILL.md"))
+        #if os.path.exists(main_skill_md):
+        #    shutil.copy2(main_skill_md, func_revert_dir)
+        #    print(f"✅ 复制文件：{main_skill_md} → {func_revert_dir}")
 
         # 调用process_func_async，传递函数专属的revert目录作为第4个参数
-        task = command_to_func_parallel_task(func_name, old_command, new_command, func_revert_dir)
+        task = _wrapped_task(semaphore, func_name, old_command, new_command, func_revert_dir)
         tasks.append(task)
     
     # 执行所有异步任务
-    results = asyncio.run(command_to_func_parallel_run(tasks))
+    results = await asyncio.gather(*tasks)
 
     # 过滤掉None结果（跳过的函数）
     valid_results = [result for result in results if result is not None]
@@ -1123,10 +1128,14 @@ def command_to_func_parallel(test_script, new_command, old_command, diff_command
 
     # 保存处理后的脚本
     shutil.copy2(test_script, time_dir)
-    print(f"✅ 复制文件到目录：{test_script} → {func_skill_md}")
+    print(f"✅ 复制文件到目录：{test_script} → {time_dir}")
 
     return
 
+def command_to_func_parallel(test_script, new_command, old_command, diff_command_list):
+    asyncio.run(
+        command_to_func_parallel_async(test_script, new_command, old_command, diff_command_list)
+    )
 
 def command_to_func(test_script, new_command, old_command, diff_command_list):
     """
@@ -1245,6 +1254,7 @@ def write_back_diff_func(script_file, old_command_file, new_command_file):
 
     # 有差异的函数重新生成
     command_to_func_parallel(script_file, new_command_dict, old_command_dict, diff_func_list)
+    #command_to_func(script_file, new_command_dict, old_command_dict, diff_func_list)
 
 
 # 检查文件是否存在
@@ -1389,33 +1399,6 @@ def copy_temp_and_prototype(source_path):
     except Exception as e:
         print(f"❌ prototype_script.py 失败：{e}")
         return success > 0
-
-
-def remove_specific_string_by_file(input_filename, string_to_remove, output_filename=None):
-    """
-    从文件中删除特定字符串
-    
-    参数:
-        input_filename: str - 输入文件路径
-        string_to_remove: str - 要删除的字符串
-        output_filename: str - 输出文件路径（可选，默认为覆盖原文件）
-    """
-    if output_filename is None:
-        output_filename = input_filename
-    
-    try:
-        with open(input_filename, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # 删除指定字符串
-        modified_content = content.replace(string_to_remove, '')
-        
-        with open(output_filename, 'w', encoding='utf-8') as f:
-            f.write(modified_content)
-        
-        print(f"成功从 {input_filename} 中删除字符串: '{string_to_remove}'")
-    except Exception as e:
-        print(f"删除字符串失败：{e}")
 
 
 def replace_return_with_ctrlz_by_file(input_filename, output_filename=None):
@@ -1588,10 +1571,6 @@ def main():
     # 把return还原为ctrl+z
     replace_return_with_ctrlz_by_file(file2)
     replace_return_with_ctrlz_by_file(file3)
-
-    # 删除文件中的"命令执行失败: "字符串
-    remove_specific_string_by_file(file2, "命令执行失败: ")
-    remove_specific_string_by_file(file3, "命令执行失败: ")
 
     # itc日志会把setup_class转为setup, teardown_class转为teardown, 此处转回去
     replace_setup_teardown(temp_path)
