@@ -517,7 +517,7 @@ class ScriptGenerationService:
             executorip = settings.get_deploy_executor_ip()
 
             if not executorip:
-                self._send_message(task_id, "error", "未找到部署的执行机IP，请先调用 /deploy 接口部署环境", "end")
+                self._send_message(task_id, "error", "未找到部署的执行机IP，请先部署组网占用环境", "end")
                 self._update_task_status(task_id, "failed")
                 # 写入任务结束标识
                 task_logger.write_end_log(task_id, "failed")
@@ -819,7 +819,7 @@ class ScriptGenerationService:
             executorip = settings.get_deploy_executor_ip()
 
             if not executorip:
-                task_logger.write_log(task_id, "❌ 未找到部署的执行机IP，请先调用 /deploy 接口部署环境")
+                task_logger.write_log(task_id, "❌ 未找到部署的执行机IP，请先部署组网占用环境")
                 self._update_task_status(task_id, "failed", "ITC脚本执行")
                 task_logger.write_end_log(task_id, "failed")
                 # ========== 统计：保存失败状态 ==========
@@ -878,8 +878,6 @@ class ScriptGenerationService:
             self._update_task_status(task_id, "completed", "ITC脚本执行")
             task_logger.write_log(task_id, "\n===== 自动化测试流程完成 =====")
 
-            # 写入任务结束标识
-            task_logger.write_end_log(task_id, "completed")
 
             # ========== 阶段4: 调用script fix修复脚本 ==========
             # 判断result_message是否需要进行修复
@@ -928,7 +926,7 @@ class ScriptGenerationService:
                 executorip = settings.get_deploy_executor_ip()
 
                 if not executorip:
-                    task_logger.write_log(task_id, "❌ 未找到部署的执行机IP，请先调用 /deploy 接口部署环境")
+                    task_logger.write_log(task_id, "❌ 未找到部署的执行机IP，请先部署组网占用环境")
                     self._update_task_status(task_id, "failed", "ITC脚本执行")
                     task_logger.write_end_log(task_id, "failed")
                     return

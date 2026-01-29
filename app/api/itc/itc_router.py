@@ -193,7 +193,9 @@ async def run_script(request: RunSingleScriptRequest):
     运行测试脚本
 
     请求参数（JSON Body）：
-    - **script_path**: 要运行的脚本文件名（如 conftest.py、test_xxx.py）
+    - **script_path**: 要运行的脚本文件名（如 conftest.py、test_xxx.py），可选
+      - 如果为空或空字符串，则拷贝工作区下所有 test_*.py 和 conftest.py 文件
+      - 如果为 conftest.py，则不仅拷贝该文件，还会将工作区中的 test_case_demo.py 拷贝到目标目录
 
     自动使用：
     - scriptspath: 由 settings.get_aigc_tool_unc_dir() 指定的 UNC 路径
@@ -201,7 +203,7 @@ async def run_script(request: RunSingleScriptRequest):
 
     在运行前会自动：
     - 删除目标目录下所有 test_*.py 和 conftest.py 文件
-    - 拷贝 conftest.py（如果存在）和用户指定的脚本文件到目标目录
+    - 根据参数拷贝相应文件到目标目录
     - 设置目录权限为 755，文件权限为 644
     """
     try:
@@ -239,22 +241,6 @@ async def run_script(request: RunSingleScriptRequest):
         # 获取请求的脚本路径
         script_path = request.script_path
 
-        # 构建源文件的完整路径
-        if os.path.isabs(script_path):
-            source_file = script_path
-        else:
-            source_file = os.path.join(work_dir, script_path)
-
-        # 检查源文件是否存在
-        if not os.path.exists(source_file):
-            raise HTTPException(
-                status_code=404,
-                detail=f"脚本文件不存在: {source_file}"
-            )
-
-        # 获取文件名
-        script_filename = os.path.basename(source_file)
-
         # ========== 第1步：删除目标目录下所有 conftest.py 和 test_*.py 文件 ==========
         deleted_files = []
         test_pattern = os.path.join(target_dir, "test_*.py")
@@ -279,7 +265,7 @@ async def run_script(request: RunSingleScriptRequest):
         if deleted_files:
             logger.info(f"已删除目标目录中的 {len(deleted_files)} 个文件: {', '.join(deleted_files)}")
 
-        # ========== 第2步：拷贝 conftest.py 和用户指定的脚本文件 ==========
+        # ========== 第2步：根据 script_path 参数拷贝文件 ==========
         # 设置目录权限为 755 (rwxr-xr-x)
         try:
             os.chmod(target_dir, 0o755)
@@ -288,27 +274,121 @@ async def run_script(request: RunSingleScriptRequest):
 
         copied_files = []
 
-        # 拷贝用户指定的脚本文件
-        dst_script_file = os.path.join(target_dir, script_filename)
-        shutil.copy2(source_file, dst_script_file)
-        try:
-            os.chmod(dst_script_file, 0o644)
-        except Exception as e:
-            logger.warning(f"设置文件权限失败 {script_filename}: {str(e)}")
-        copied_files.append(script_filename)
-        logger.info(f"已拷贝脚本文件: {script_filename} -> {dst_script_file}")
+        # 判断 script_path 是否为空或空字符串
+        if not script_path or script_path.strip() == "":
+            # ========== 情况1：script_path 为空，拷贝所有 test_*.py 和 conftest.py ==========
+            logger.info(f"script_path 为空，拷贝工作区下所有测试文件")
 
-        # 查找并拷贝 conftest.py
-        conftest_source = os.path.join(work_dir, "conftest.py")
-        if os.path.exists(conftest_source) and script_filename != "conftest.py":
+            # 查找工作区下所有 test_*.py 文件
+            test_pattern = os.path.join(work_dir, "test_*.py")
+            test_source_files = glob.glob(test_pattern)
+            for source_file in test_source_files:
+                try:
+                    script_filename = os.path.basename(source_file)
+                    dst_file = os.path.join(target_dir, script_filename)
+                    shutil.copy2(source_file, dst_file)
+                    try:
+                        os.chmod(dst_file, 0o644)
+                    except Exception as e:
+                        logger.warning(f"设置文件权限失败 {script_filename}: {str(e)}")
+                    copied_files.append(script_filename)
+                    logger.info(f"已拷贝测试文件: {script_filename} -> {dst_file}")
+                except Exception as e:
+                    logger.warning(f"拷贝文件失败 {source_file}: {str(e)}")
+
+            # 查找并拷贝 conftest.py
+            conftest_source = os.path.join(work_dir, "conftest.py")
+            if os.path.exists(conftest_source):
+                dst_conftest = os.path.join(target_dir, "conftest.py")
+                shutil.copy2(conftest_source, dst_conftest)
+                try:
+                    os.chmod(dst_conftest, 0o644)
+                except Exception as e:
+                    logger.warning(f"设置文件权限失败 conftest.py: {str(e)}")
+                copied_files.append("conftest.py")
+                logger.info(f"已拷贝 conftest.py -> {dst_conftest}")
+
+        elif os.path.basename(script_path) == "conftest.py":
+            # ========== 情况2：script_path 是 conftest.py ==========
+            logger.info(f"script_path 是 conftest.py，拷贝并创建 test_case_demo.py")
+
+            # 构建源文件的完整路径
+            if os.path.isabs(script_path):
+                source_file = script_path
+            else:
+                source_file = os.path.join(work_dir, script_path)
+
+            # 检查源文件是否存在
+            if not os.path.exists(source_file):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"脚本文件不存在: {source_file}"
+                )
+
+            # 拷贝 conftest.py
             dst_conftest = os.path.join(target_dir, "conftest.py")
-            shutil.copy2(conftest_source, dst_conftest)
+            shutil.copy2(source_file, dst_conftest)
             try:
                 os.chmod(dst_conftest, 0o644)
             except Exception as e:
                 logger.warning(f"设置文件权限失败 conftest.py: {str(e)}")
             copied_files.append("conftest.py")
             logger.info(f"已拷贝 conftest.py -> {dst_conftest}")
+
+            # 拷贝项目中的 test_case_demo.py 文件
+            demo_source = os.path.join(os.path.dirname(__file__), "..", "models", "itc", "test_case_demo.py")
+            demo_source = os.path.abspath(demo_source)
+            if os.path.exists(demo_source):
+                demo_dst = os.path.join(target_dir, "test_case_demo.py")
+                shutil.copy2(demo_source, demo_dst)
+                try:
+                    os.chmod(demo_dst, 0o644)
+                except Exception as e:
+                    logger.warning(f"设置文件权限失败 test_case_demo.py: {str(e)}")
+                copied_files.append("test_case_demo.py")
+                logger.info(f"已拷贝 test_case_demo.py -> {demo_dst}")
+            else:
+                logger.warning(f"项目中未找到 test_case_demo.py 文件: {demo_source}")
+
+        else:
+            # ========== 情况3：正常拷贝指定脚本文件 ==========
+            # 构建源文件的完整路径
+            if os.path.isabs(script_path):
+                source_file = script_path
+            else:
+                source_file = os.path.join(work_dir, script_path)
+
+            # 检查源文件是否存在
+            if not os.path.exists(source_file):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"脚本文件不存在: {source_file}"
+                )
+
+            # 获取文件名
+            script_filename = os.path.basename(source_file)
+
+            # 拷贝用户指定的脚本文件
+            dst_script_file = os.path.join(target_dir, script_filename)
+            shutil.copy2(source_file, dst_script_file)
+            try:
+                os.chmod(dst_script_file, 0o644)
+            except Exception as e:
+                logger.warning(f"设置文件权限失败 {script_filename}: {str(e)}")
+            copied_files.append(script_filename)
+            logger.info(f"已拷贝脚本文件: {script_filename} -> {dst_script_file}")
+
+            # 查找并拷贝 conftest.py
+            conftest_source = os.path.join(work_dir, "conftest.py")
+            if os.path.exists(conftest_source) and script_filename != "conftest.py":
+                dst_conftest = os.path.join(target_dir, "conftest.py")
+                shutil.copy2(conftest_source, dst_conftest)
+                try:
+                    os.chmod(dst_conftest, 0o644)
+                except Exception as e:
+                    logger.warning(f"设置文件权限失败 conftest.py: {str(e)}")
+                copied_files.append("conftest.py")
+                logger.info(f"已拷贝 conftest.py -> {dst_conftest}")
 
         copy_info = f"已删除 {len(deleted_files)} 个旧文件，已拷贝 {len(copied_files)} 个文件: {', '.join(copied_files)}"
 
