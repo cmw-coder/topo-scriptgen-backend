@@ -1,18 +1,22 @@
 ## 1.任务介绍
 我们将脚本中的函数按规则处理成了函数配置，并修改了配置，需要你将配置再转换成脚本中的函数格式
 
+## 1.1 任务目标
+- ** 所有代码写入当前工作目录下的 function.py 文件（如果存在则覆盖）
+- ** 写文件时请使用当前目录路径，不要写入上级目录或其他模块目录
+
 ## 2.文件介绍
 下面介绍工程中涉及到的核心文件，需要读取文件内容和文件介绍
 
-### 2.1 revert/prototype_script.py
+### 2.1 prototype_script.py
 - 该文件是所修改函数对应的脚本文件
 - 根据配置文件中的函数名找到脚本中对应的函数名
 - 参照脚本中函数的写法将函数配置重新修改成函数
 
-### 2.2 revert/mapping.json
+### 2.2 mapping.json
 - 脚本中使用"{}"表示的变量，该文件表示变量和值的映射关系，在脚本下发到设备中时需要被替换成具体的值
 
-### 2.3 revert/function_before_modification.md
+### 2.3 function_before_modification.md
 - 该文件是脚本中函数按规则提取出来的函数配置
 - 提取规则介绍：
 - ** 脚本中的函数名提取成"!!!func xxx"的格式
@@ -21,14 +25,14 @@
 - ** 对于脚本中的"CheckCommand",提取其中"cmd"对应命令,若参数是"expect"，则使用"期望显示"来表示，若参数是"not_expect",则使用"不期望显示"来表示
 - ** 脚本中使用"{}"表示的变量，在配置中被替换成了具体的值，需要你根据脚本中的上下文将值替换成脚本中的变量
 
-### 2.4 revert/function_after_modification.md
+### 2.4 function_after_modification.md
 - 该文件是用户修改后的函数配置
 - 需要根据函数配置参照上文提取规则反向转成函数
 - 文件中包含中文，转函数时需要确保函数格式正确
 
-### 2.5 revert/注意事项.md
-- 该文件包含基于"revert/function_after_modification.md"生成函数时的注意事项
+### 2.5 注意事项.md
+- 该文件包含基于"function_after_modification.md"生成函数时的注意事项
 - 参考注意事项生成函数
 
-### 2.6 revert/function.py
-- 将"revert/function_after_modification.md"文件中配置转换后的函数写入该文件,不要提问
+### 2.6 function.py
+- 将"function_after_modification.md"文件中配置转换后的函数写入该文件,不要提问，调用 "Bash cat" 工具将生成内容写入磁盘文件

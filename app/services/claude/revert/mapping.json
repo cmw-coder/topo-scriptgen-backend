@@ -1,4 +1,0 @@
-{
-    "gl.DUT2.PORT2.intf":"GigabitEthernet0/0/2",
-    "gl.DUT2.PORT1.intf":"GigabitEthernet0/0/1"
-}
