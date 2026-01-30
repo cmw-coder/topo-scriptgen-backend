@@ -31,7 +31,7 @@ class RunScriptRequest(BaseModel):
 
 class RunSingleScriptRequest(BaseModel):
     """运行单个脚本请求模型"""
-    script_path: str = Field(..., description="要运行的脚本文件名（如 conftest.py）")
+    script_path: Optional[str] = Field(None, description="要运行的脚本文件名（如 conftest.py），为空则下发全部脚本")
 
 class ExecutorRequest(BaseModel):
     """执行机操作请求模型（用于undeploy、restoreconfiguration、suspend、resume）"""
