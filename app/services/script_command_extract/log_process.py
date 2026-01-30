@@ -30,37 +30,43 @@ class LOGPROCESS:
                 script_name = title_list[-1]
         return script_name
 
-    def extract_and_split_commands(self, param_string):
+    def extract_and_split_commands(self, param_string: str):
         """
-        从函数参数字符串中提取第一个括号中的内容，并按换行符分割成命令列表
-        
-        Args:
-            param_string: 函数参数字符串，如 "函数入参：('aaa.cfg',),{}"
-            
-        Returns:
-            list: 分割后的命令列表，每个命令已去除前后空格和单引号
+        例：
+        param_string = "函数入参：('\\nctrl+z\\nsystem-view\\nweb-cache slot 0\\ndisplay this\\ncache-profile 11\\nuri regular .*\\\\\\\\.(png|gif)$\\n        ',),{}"
         """
         try:
-            # 匹配括号内的内容（包括多行）
-            match = re.search(r'\(\s*(.*?)\s*\)', param_string, re.DOTALL)
-
-            if not match:
+            if len(param_string) < 3:
                 return []
-            
-            content = match.group(1).strip()
-            
-            # 去除外层引号（支持单引号和双引号）
-            if (content.startswith("'") and content.endswith("'")) or \
-               (content.startswith('"') and content.endswith('"')):
-                content = content[1:-1]
-            
-            # 去除末尾的逗号（如果有）
-            if content.endswith(','):
-                content = content[:-1].strip()
-            
-            # 按换行符分割并处理每个命令
+
+            # 1. 倒着去掉最后 3 个字符，得到类似 "...',)"
+            trimmed = param_string[:-3]
+
+            # 2. 找到第一个 '(' 和与其匹配的 ')'（从后往前找）
+            start = trimmed.find('(')
+            if start == -1:
+                return []
+
+            end = trimmed.rfind(')')
+            if end == -1 or end <= start:
+                return []
+
+            # 3. 拿出括号中的内容：'\nctrl+z\n...\n        ', 
+            inner = trimmed[start + 1:end].strip()
+
+            # 4. 按逗号分割，拿第一个参数：'\nctrl+z\n...\n        '
+            first_arg = inner.split(',', 1)[0].strip()
+
+            # 5. 去掉首尾成对的引号（只去掉一层）
+            if (first_arg.startswith("'") and first_arg.endswith("'")) or \
+               (first_arg.startswith('"') and first_arg.endswith('"')):
+                first_arg = first_arg[1:-1]
+
+            text = first_arg
+
+            # 6. 按行拆命令
             commands = []
-            for cmd in content.split('\n'):
+            for cmd in text.split('\n'):
                 cmd = cmd.strip()
                 if not cmd:
                     continue
@@ -72,13 +78,11 @@ class LOGPROCESS:
                 
                 if cmd:  # 确保不为空
                     commands.append(cmd)
-            
             return commands
-            
         except Exception as e:
             print(f"提取命令时出错: {e}")
             return []
-
+            
     def parse_layer_info(self, input_string):
         """
         解析层信息字符串，按顺序提取信息生成列表
@@ -401,7 +405,7 @@ class LOGPROCESS:
                 send_info["expect"] = []
                 send_info["exec_res"] = exec_res
                 send_info.update(log_info)
-                
+
         return send_info
 
     def fill_error_check_info(self, check_log):
@@ -898,8 +902,8 @@ class LOGPROCESS:
                 pre_dut_name = "void_name"
                 dut_list = []
                 pre_funcname = item["func"]
-            #if "device_name" not in item:
-                #print(item)
+            if "device_name" not in item:
+                continue
             dut_name = item["device_name"]
             if "void_name" == pre_dut_name:
                 pre_dut_name = dut_name
