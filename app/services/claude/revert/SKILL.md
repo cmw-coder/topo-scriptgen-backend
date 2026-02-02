@@ -36,3 +36,4 @@
 
 ### 2.6 function.py
 - 将"function_after_modification.md"文件中配置转换后的函数写入该文件,不要提问，调用 "Bash cat" 工具将生成内容写入磁盘文件
+- 生成"function.py"前使用"diff"工具查看文件"function_after_modification.md"和"function_before_modification.md",查看diff所有改动包括字符变化，把改动后的内容放入新函数中
