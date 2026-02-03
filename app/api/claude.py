@@ -6,7 +6,8 @@ Claude Code API 路由层
 """
 import uuid
 import os
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from typing import List
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -198,3 +199,101 @@ async def get_task_log(task_id: str):
         import traceback
         logging.getLogger(__name__).error(f"获取任务日志失败: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"获取任务日志失败: {str(e)}")
+
+
+@router.post("/generate-netconf-script", response_model=BaseResponse)
+async def generate_netconf_script(
+    files: List[UploadFile] = File(..., description="YANG 文件列表（支持多个文件上传）"),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """
+    根据上传的 YANG 文件生成 NETCONF 测试脚本
+
+    请求参数（multipart/form-data）：
+    - **files**: YANG 文件列表，支持同时上传多个文件
+
+    处理流程：
+    1. 保存上传的 YANG 文件到 /project/yang_files 目录
+    2. 生成 NETCONF 测试脚本
+    3. 生成对应的 log 文件
+    4. 返回 log_id（task_id）
+
+    返回taskId，前端可以通过 GET /api/v1/claude/task-log/{task_id} 获取执行日志
+    """
+    try:
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 生成唯一任务ID
+        task_id = str(uuid.uuid4())
+
+        # 获取工作目录
+        workspace = settings.get_work_directory()
+
+        # 构建 yang_files 目录路径
+        yang_files_dir = os.path.join(workspace, "project", "yang_files")
+        os.makedirs(yang_files_dir, exist_ok=True)
+
+        # 保存上传的文件
+        saved_files = []
+        for file in files:
+            filename = file.filename
+            if not filename:
+                logger.warning(f"Task {task_id}: 跳过空文件名")
+                continue
+
+            # 安全检查：防止路径穿越攻击
+            if '..' in filename or '/' in filename or '\\' in filename:
+                logger.warning(f"Task {task_id}: 检测到非法文件名: {filename}")
+                continue
+
+            # 保存文件
+            file_path = os.path.join(yang_files_dir, filename)
+            try:
+                with open(file_path, 'wb') as f:
+                    content = await file.read()
+                    f.write(content)
+                saved_files.append(filename)
+                logger.info(f"Task {task_id}: 已保存文件: {filename}")
+            except Exception as e:
+                logger.error(f"Task {task_id}: 保存文件 {filename} 失败: {str(e)}")
+
+        if not saved_files:
+            raise HTTPException(status_code=400, detail="未找到有效的文件")
+
+        # 使用 task_manager 创建任务
+        task_manager.create_task(
+            task_id=task_id,
+            test_point=f"生成 NETCONF 测试脚本，基于 {len(saved_files)} 个 YANG 文件",
+            workspace=workspace
+        )
+
+        logger.info(f"创建generate-netconf-script任务: task_id={task_id}, files={saved_files}")
+
+        # 添加后台任务执行完整流程
+        background_tasks.add_task(
+            script_generation_service.execute_netconf_script_pipeline,
+            task_id,
+            workspace,
+            saved_files
+        )
+
+        return BaseResponse(
+            status="ok",
+            message="NETCONF 脚本生成任务已启动",
+            data={
+                "task_id": task_id,
+                "log_id": task_id,
+                "log_url": f"/api/v1/claude/task-log/{task_id}",
+                "saved_files": saved_files,
+                "yang_files_dir": yang_files_dir
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"创建generate-netconf-script任务失败: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"创建 NETCONF 脚本生成任务失败: {str(e)}")
