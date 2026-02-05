@@ -378,6 +378,14 @@ async def run_script(request: RunSingleScriptRequest):
             copied_files.append(script_filename)
             logger.info(f"已拷贝脚本文件: {script_filename} -> {dst_script_file}")
 
+            # 验证 - 近期出现拷贝日志成功但实际未拷贝，增加日志定位20260205
+            if not os.path.exists(dst_script_file):
+                logger.error(f"拷贝后文件不存在!")
+                logger.error(f"目标目录: {target_dir}")
+                logger.error(f"目标文件: {dst_script_file}")
+                logger.error(f"目录可写: {os.access(target_dir, os.W_OK)}")
+
+
             # 查找并拷贝 conftest.py
             conftest_source = os.path.join(work_dir, "conftest.py")
             if os.path.exists(conftest_source) and script_filename != "conftest.py":
