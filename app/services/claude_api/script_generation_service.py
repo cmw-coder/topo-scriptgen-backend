@@ -746,7 +746,7 @@ class ScriptGenerationService:
                 # ======================================
                 return
 
-            task_logger.write_log(task_id, f"ℹ️ 执行机IP: {executorip}")
+            task_logger.write_log(task_id, f"ℹ️ 执行机IP: {executorip}，账号:itc 密码:auto_123")
 
             # 构造脚本路径
             scriptspath = settings.get_aigc_tool_unc_dir()

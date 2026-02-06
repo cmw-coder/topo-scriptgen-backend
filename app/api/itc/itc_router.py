@@ -336,7 +336,7 @@ async def run_script(request: RunSingleScriptRequest):
             logger.info(f"已拷贝 conftest.py -> {dst_conftest}")
 
             # 拷贝项目中的 test_case_demo.py 文件
-            demo_source = os.path.join(os.path.dirname(__file__), "..", "models", "itc", "test_case_demo.py")
+            demo_source = os.path.join(os.path.dirname(__file__), "..","..", "models", "itc", "test_case_demo.py")
             demo_source = os.path.abspath(demo_source)
             if os.path.exists(demo_source):
                 demo_dst = os.path.join(target_dir, "test_case_demo.py")
