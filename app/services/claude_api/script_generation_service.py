@@ -250,87 +250,6 @@ class ScriptGenerationService:
             except Exception as fingerprint_err:
                 self.logger.warning(f"Task {task_id}: 添加AI指纹失败: {str(fingerprint_err)}")
 
-            # ========== 第4步：清理临时文件 ==========
-            self.logger.info(f"Task {task_id}: 清理临时文件")
-            self._send_message(task_id, "info", "===== 第4步：清理临时文件 =====", "processing")
-
-            # ========== 第5步：拷贝修改后的脚本到目标目录 ==========
-            self.logger.info(f"Task {task_id}: 拷贝修改后的脚本到目标目录")
-            self._send_message(task_id, "info", "===== 第5步：拷贝修改后的脚本到目标目录 =====", "processing")
-
-            target_dir = settings.get_aigc_tool_local_dir()
-
-            # 创建目标目录
-            os.makedirs(target_dir, exist_ok=True)
-            self.logger.info(f"Task {task_id}: 目标目录: {target_dir}")
-
-            # 拷贝修改后的脚本文件
-            script_name = os.path.basename(script_full_path)
-            target_script_path = os.path.join(target_dir, script_name)
-
-            try:
-                shutil.copy2(script_full_path, target_script_path)
-
-                # 设置 python 脚本文件权限（权限不足时记录警告）
-                try:
-                    os.chmod(target_script_path, 0o777)
-                except PermissionError:
-                    self.logger.warning(f"Task {task_id}: ⚠️ 权限不足，无法设置脚本文件权限: {target_script_path}")
-
-                self._send_message(task_id, "info", f"✓ 修改后的脚本已拷贝到: {target_script_path}", "processing")
-                self.logger.info(f"Task {task_id}: 脚本已拷贝到 {target_script_path}")
-            except Exception as e:
-                self.logger.error(f"Task {task_id}: 拷贝脚本失败: {str(e)}")
-                self._send_message(task_id, "warning", f"⚠ 拷贝脚本失败: {str(e)}", "processing")
-
-            # ========== 第6步：拷贝 default.topox 文件 ==========
-            self.logger.info(f"Task {task_id}: 拷贝 default.topox 文件")
-            self._send_message(task_id, "info", "===== 第6步：拷贝 default.topox 文件 =====", "processing")
-
-            try:
-                # 获取工作目录，在工作区根目录直接查找 topox 文件
-                workspace = settings.get_work_directory()
-
-                # 查找 default.topox 文件（在工作区根目录）
-                default_topox_source = os.path.join(workspace, "default.topox")
-
-                if os.path.exists(default_topox_source):
-                    # 删除目标目录中所有非 default.topox 的文件
-                    existing_topox_files = glob.glob(os.path.join(target_dir, "*.topox"))
-
-                    deleted_topox_count = 0
-                    for topox_file in existing_topox_files:
-                        topox_filename = os.path.basename(topox_file)
-                        if topox_filename != "default.topox":
-                            try:
-                                os.remove(topox_file)
-                                deleted_topox_count += 1
-                                self.logger.info(f"Task {task_id}: 已删除旧 topox 文件: {topox_filename}")
-                            except Exception as e:
-                                self.logger.warning(f"Task {task_id}: 删除 topox 文件 {topox_filename} 失败: {str(e)}")
-
-                    if deleted_topox_count > 0:
-                        self._send_message(task_id, "info", f"✓ 已删除 {deleted_topox_count} 个其他名称的 topox 文件", "processing")
-
-                    # 拷贝 default.topox 到目标目录
-                    target_topox_path = os.path.join(target_dir, "default.topox")
-                    shutil.copy2(default_topox_source, target_topox_path)
-
-                    # 设置 topox 文件权限（权限不足时记录警告）
-                    try:
-                        os.chmod(target_topox_path, 0o777)
-                    except PermissionError:
-                        self.logger.warning(f"Task {task_id}: ⚠️ 权限不足，无法设置 topox 文件权限: {target_topox_path}")
-
-                    self._send_message(task_id, "info", f"✓ default.topox 已拷贝到: {target_topox_path}", "processing")
-                    self.logger.info(f"Task {task_id}: default.topox 已拷贝到 {target_topox_path}")
-                else:
-                    self._send_message(task_id, "warning", f"⚠ 未找到 default.topox 文件: {default_topox_source}", "processing")
-                    self.logger.warning(f"Task {task_id}: default.topox 文件不存在: {default_topox_source}")
-
-            except Exception as e:
-                self.logger.error(f"Task {task_id}: 拷贝 default.topox 失败: {str(e)}")
-                self._send_message(task_id, "warning", f"⚠ 拷贝 default.topox 失败: {str(e)}", "processing")
 
             # ========== 脚本回写完成 ==========
             self._update_task_status(task_id, "completed")
@@ -1102,7 +1021,7 @@ class ScriptGenerationService:
             )
 
             try:
-                result = await itc_service.run_script(itc_request, run_new=True)
+                result = await itc_service.run_script(itc_request)
             except Exception as e:
                 self.logger.error(f"Task {task_id}: ITC run 调用异常: {str(e)}")
                 result = {

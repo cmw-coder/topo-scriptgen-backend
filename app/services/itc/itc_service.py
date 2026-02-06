@@ -1332,13 +1332,14 @@ class ITCService:
         self._clear_itc_run_result()
         logger.info("已清除 aigc.json 中的旧 ITC run 结果")
 
-        # 在调用 ITC run 前，拷贝工作目录中的 Python 脚本到目标目录
-        try:
-            logger.info("开始拷贝 Python 脚本到目标目录...")
-            target_dir = self._copy_python_scripts_to_target_dir(run_new)
-            logger.info(f"Python 脚本已成功拷贝到: {target_dir}")
-        except Exception as e:
-            logger.warning(f"拷贝 Python 脚本失败，但继续执行: {str(e)}")
+        if run_new : 
+            # 在调用 ITC run 前，拷贝工作目录中的 Python 脚本到目标目录
+            try:
+                logger.info("开始拷贝 Python 脚本到目标目录...")
+                target_dir = self._copy_python_scripts_to_target_dir(run_new)
+                logger.info(f"Python 脚本已成功拷贝到: {target_dir}")
+            except Exception as e:
+                logger.warning(f"拷贝 Python 脚本失败，但继续执行: {str(e)}")
 
         data = {
             "scriptspath": request.scriptspath,
