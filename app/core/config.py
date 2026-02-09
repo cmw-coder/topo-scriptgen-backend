@@ -1,6 +1,7 @@
 import getpass
 import json
 import logging
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -111,6 +112,9 @@ class Settings:
             short_uuid = str(uuid.uuid4()).split('-')[0][:8]
             cls._AIGC_PROJECT_NAME = f"proj_{timestamp}_{short_uuid}"
 
+            # 创建项目文件夹并设置权限
+            cls._create_project_directory_with_permissions(cls._AIGC_PROJECT_NAME)
+
             # 保存到 aigc.json
             cls._save_aigc_project_name(cls._AIGC_PROJECT_NAME)
 
@@ -124,6 +128,35 @@ class Settings:
             logger.warning(f"获取/生成项目名称失败: {e}，使用默认值")
             cls._AIGC_PROJECT_NAME = f"proj_default_{datetime.now().strftime('%y%m%d%H')}"
             return cls._AIGC_PROJECT_NAME
+
+    @classmethod
+    def _create_project_directory_with_permissions(cls, project_name: str) -> None:
+        """创建项目文件夹并设置任意用户可读写权限
+
+        Args:
+            project_name: 项目名称
+        """
+        try:
+            username = getpass.getuser()
+            project_dir = Path(cls.AIGC_TOOL_LOCAL_BASE) / username / project_name
+
+            # 创建项目文件夹（包括父目录）
+            project_dir.mkdir(parents=True, exist_ok=True)
+
+            # 设置权限为 777（任意用户可读写执行）
+            os.chmod(project_dir, 0o777)
+
+            # 同时设置父目录（用户目录）的权限
+            user_dir = Path(cls.AIGC_TOOL_LOCAL_BASE) / username
+            if user_dir.exists():
+                os.chmod(user_dir, 0o777)
+
+            logger = logging.getLogger(__name__)
+            logger.info(f"创建项目文件夹并设置权限: {project_dir}")
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"创建项目文件夹或设置权限失败: {e}")
 
     @classmethod
     def _save_aigc_project_name(cls, project_name: str) -> None:

@@ -230,12 +230,16 @@ async def generate_netconf_script(
         # 获取工作目录
         workspace = settings.get_work_directory()
 
-        # 构建 yang_files 目录路径
+        # 构建目录路径
         yang_files_dir = os.path.join(workspace, "project", "yang_files")
+        project_dir = os.path.join(workspace, "project")
         os.makedirs(yang_files_dir, exist_ok=True)
+        os.makedirs(project_dir, exist_ok=True)
 
         # 保存上传的文件
         saved_files = []
+        yang_files = []
+        other_files = []
         for file in files:
             filename = file.filename
             if not filename:
@@ -247,8 +251,15 @@ async def generate_netconf_script(
                 logger.warning(f"Task {task_id}: 检测到非法文件名: {filename}")
                 continue
 
+            # 根据文件后缀决定保存路径
+            if filename.endswith('.yang'):
+                file_path = os.path.join(yang_files_dir, filename)
+                yang_files.append(filename)
+            else:
+                file_path = os.path.join(project_dir, filename)
+                other_files.append(filename)
+
             # 保存文件
-            file_path = os.path.join(yang_files_dir, filename)
             try:
                 with open(file_path, 'wb') as f:
                     content = await file.read()
@@ -286,7 +297,10 @@ async def generate_netconf_script(
                 "log_id": task_id,
                 "log_url": f"/api/v1/claude/task-log/{task_id}",
                 "saved_files": saved_files,
-                "yang_files_dir": yang_files_dir
+                "yang_files": yang_files,
+                "other_files": other_files,
+                "yang_files_dir": yang_files_dir,
+                "project_dir": project_dir
             }
         )
 
