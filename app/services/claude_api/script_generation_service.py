@@ -973,6 +973,7 @@ class ScriptGenerationService:
         # 写入任务开始标识
         task_logger.write_start_log(task_id, "NETCONF 脚本生成任务")
         task_logger.write_log(task_id, f"YANG 文件: {', '.join(yang_files)}")
+        
 
         # ========== 统计：获取或创建流程统计记录 ==========
         from app.services.metrics_service import metrics_service
