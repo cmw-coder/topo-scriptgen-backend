@@ -66,7 +66,7 @@ async def call_netconf_material_preparation_skill(
     workspace: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    调用 netconf_test_script_generation_material_preparation skill
+    调用 netconf-test-script-generation-material-preparation skill
 
     此 skill 会自动执行以下操作：
     - 将 Word API 文档转换为 Markdown 格式，生成 converted_docs/ 目录
@@ -83,8 +83,8 @@ async def call_netconf_material_preparation_skill(
     try:
         # 写入开始日志
         task_logger.write_log(task_id, "NETCONF 材料准备")
-        task_logger.write_log(task_id, f"开始调用 netconf_test_script_generation_material_preparation skill")
-        logger.info(f"Task {task_id}: 开始调用 netconf_test_script_generation_material_preparation skill")
+        task_logger.write_log(task_id, f"开始调用 netconf-test-script-generation-material-preparation skill")
+        logger.info(f"Task {task_id}: 开始调用 netconf-test-script-generation-material-preparation skill")
 
         # 设置环境 - 从 netconf_workflow 导入避免重复定义
         from app.services.netconf.netconf_workflow import setup_agent_environment
@@ -109,7 +109,7 @@ async def call_netconf_material_preparation_skill(
         )
 
         # 构造 prompt
-        prompt = escape_all_special_chars(f"""在工作区 {workspace} 调用 skill: netconf_test_script_generation_material_preparation,
+        prompt = escape_all_special_chars(f"""在工作区 {workspace} 调用 skill: netconf-test-script-generation-material-preparation,
 
             此 skill 会自动执行以下操作：
             - 将 Word API 文档转换为 Markdown 格式，生成 `converted_docs/` 目录
