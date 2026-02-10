@@ -15,6 +15,7 @@ import os
 import json
 import logging
 import getpass
+import asyncio
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
@@ -146,169 +147,146 @@ async def execute_netconf_workflow(
         workspace: 工作目录
         device_info: 设备信息（可选）
     """
-    # 设置环境变量
-    setup_agent_environment()
+    try:
+        # 设置环境变量
+        setup_agent_environment()
 
-    # ========== 预处理：创建并设置 AIGC 工具目录权限 ==========
-    username = getpass.getuser()
-    aigc_tool_dir = settings.get_aigc_tool_local_dir(username)
+        # ========== 预处理：创建并设置 AIGC 工具目录权限 ==========
+        username = getpass.getuser()
+        aigc_tool_dir = settings.get_aigc_tool_local_dir(username)
 
-    # 创建目录并设置权限为 777
-    os.makedirs(aigc_tool_dir, exist_ok=True)
+        # 创建目录并设置权限为 777
+        os.makedirs(aigc_tool_dir, exist_ok=True)
 
-    # # 递归设置目录权限为 777
-    # def set_permissions_recursive(path, mode):
-    #     """递归设置目录及其所有内容的权限"""
-    #     try:
-    #         os.chmod(path, mode)
-    #         for root, dirs, files in os.walk(path):
-    #             for dir_name in dirs:
-    #                 dir_path = os.path.join(root, dir_name)
-    #                 try:
-    #                     os.chmod(dir_path, mode)
-    #                 except Exception as e:
-    #                     logger.warning(f"设置目录权限失败 {dir_path}: {e}")
-    #             for file_name in files:
-    #                 file_path = os.path.join(root, file_name)
-    #                 try:
-    #                     os.chmod(file_path, mode)
-    #                 except Exception as e:
-    #                     logger.warning(f"设置文件权限失败 {file_path}: {e}")
-    #     except Exception as e:
-    #         logger.warning(f"设置根目录权限失败 {path}: {e}")
+        logger.info(f"Task {task_id}: AIGC 工具目录已创建并设置权限: {aigc_tool_dir}")
 
-    # set_permissions_recursive(aigc_tool_dir, 0o777)
-    logger.info(f"Task {task_id}: AIGC 工具目录已创建并设置权限: {aigc_tool_dir}")
+        # ========== 阶段1: 准备依赖材料 ==========
+        logger.info(f"Task {task_id}: 开始准备依赖材料")
+        update_task_status(task_id, "running", "准备依赖材料")
+        print("===== 阶段1: 准备依赖材料 =====")
 
-    # ========== 阶段1: 准备依赖材料 ==========
-    logger.info(f"Task {task_id}: 开始准备依赖材料")
-    update_task_status(task_id, "running", "准备依赖材料")
-    print("===== 阶段1: 准备依赖材料 =====")
-
-    prepare_result = await prepare_dependencies(
-        task_id=task_id,
-        test_point=test_point
-    )
-
-    if prepare_result.get("return_code") != "200":
-        print("❌ 依赖材料准备失败，终止流程")
-        return
-
-    print("✓ 依赖材料准备完成")
-
-    # ========== 阶段2: 生成 NETCONF 测试脚本 ==========
-    logger.info(f"Task {task_id}: 开始生成 NETCONF 测试脚本")
-    update_task_status(task_id, "running", "生成脚本")
-    print("\n===== 阶段2: 生成 NETCONF 测试脚本 =====")
-
-    generate_result = await generate_netconf_scripts(
-        task_id=task_id
-    )
-
-    if generate_result.get("return_code") != "200":
-        print("❌ NETCONF 脚本生成失败，终止流程")
-        return
-    
-    print("✓ NETCONF 脚本生成完成")
-
-    # ========== 阶段3: 运行测试脚本 ==========
-    logger.info(f"Task {task_id}: 开始运行测试脚本")
-    update_task_status(task_id, "running", "运行脚本")
-    print("\n===== 阶段3: 运行测试脚本 =====")
-
-    # 获取所有子文件夹
-    output_dir = get_output_dir()
-    subdirs = [d for d in Path(output_dir).iterdir() if d.is_dir()]
-
-    if not subdirs:
-        print("❌ netconf_output 目录下没有子文件夹")
-        return
-
-    print(f"找到 {len(subdirs)} 个子文件夹，开始运行测试脚本\n")
-
-    # 为每个子文件夹调用 run_netconf_scripts
-    all_results = []
-    success_count = 0
-    failed_count = 0
-
-    for subdir in subdirs:
-        print(f"\n--- 运行子文件夹: {subdir.name} ---")
-        logger.info(f"Task {task_id}: 运行子文件夹 {subdir.name}")
-
-        # 调用 run_netconf_scripts，传入子文件夹路径
-        run_result = await run_netconf_scripts(
+        prepare_result = await prepare_dependencies(
             task_id=task_id,
-            subdir_path=str(subdir)
+            test_point=test_point
         )
 
-        # 检查是否成功（使用统一格式的 success 字段）
-        success = run_result.get("success", False)
+        if prepare_result.get("return_code") != "200":
+            print("❌ 依赖材料准备失败，终止流程")
+            return
 
-        all_results.append({
-            "subdir": subdir.name,
-            "success": success,
-            "result": run_result
-        })
+        print("✓ 依赖材料准备完成")
 
-        if success:
-            success_count += 1
-            print(f"✓ {subdir.name} 运行成功")
+        # ========== 阶段2: 生成 NETCONF 测试脚本 ==========
+        logger.info(f"Task {task_id}: 开始生成 NETCONF 测试脚本")
+        update_task_status(task_id, "running", "生成脚本")
+        print("\n===== 阶段2: 生成 NETCONF 测试脚本 =====")
+
+        generate_result = await generate_netconf_scripts(
+            task_id=task_id
+        )
+
+        if generate_result.get("return_code") != "200":
+            print("❌ NETCONF 脚本生成失败，终止流程")
+            return
+
+        print("✓ NETCONF 脚本生成完成")
+
+        # ========== 阶段3: 运行测试脚本 ==========
+        logger.info(f"Task {task_id}: 开始运行测试脚本")
+        update_task_status(task_id, "running", "运行脚本")
+        print("\n===== 阶段3: 运行测试脚本 =====")
+
+        # 获取所有子文件夹
+        output_dir = get_output_dir()
+        subdirs = [d for d in Path(output_dir).iterdir() if d.is_dir()]
+
+        if not subdirs:
+            print("❌ netconf_output 目录下没有子文件夹")
+            return
+
+        print(f"找到 {len(subdirs)} 个子文件夹，开始运行测试脚本\n")
+
+        # 为每个子文件夹调用 run_netconf_scripts
+        all_results = []
+        success_count = 0
+        failed_count = 0
+
+        for subdir in subdirs:
+            print(f"\n--- 运行子文件夹: {subdir.name} ---")
+            logger.info(f"Task {task_id}: 运行子文件夹 {subdir.name}")
+
+            # 调用 run_netconf_scripts，传入子文件夹路径
+            run_result = await run_netconf_scripts(
+                task_id=task_id,
+                subdir_path=str(subdir)
+            )
+
+            # 检查是否成功（使用统一格式的 success 字段）
+            success = run_result.get("success", False)
+
+            all_results.append({
+                "subdir": subdir.name,
+                "success": success,
+                "result": run_result
+            })
+
+            if success:
+                success_count += 1
+                print(f"✓ {subdir.name} 运行成功")
+            else:
+                failed_count += 1
+                print(f"✗ {subdir.name} 运行失败")
+
+                # 检查是否需要停止整个工作流
+                if run_result.get("stop_workflow"):
+                    print(f"\n⚠️  检测到函数修复3次仍然失败，停止整个工作流")
+                    logger.warning(f"Task {task_id}: 函数修复失败，停止工作流")
+                    break  # 跳出循环，不再处理其他子文件夹
+
+        # 汇总结果
+        print(f"\n===== 运行结果汇总 =====")
+
+        # 检查是否因函数修复失败而停止
+        workflow_stopped = any(r.get("result", {}).get("stop_workflow", False) for r in all_results if not r.get("success"))
+
+        if workflow_stopped:
+            print(f"成功: {success_count}, 失败: {failed_count}, 总数: {len(all_results)}")
+            print(f"⚠️  工作流因函数修复失败而停止，未完成所有子文件夹的运行")
+            return_code = "500"  # 因修复失败而停止
         else:
-            failed_count += 1
-            print(f"✗ {subdir.name} 运行失败")
+            print(f"成功: {success_count}, 失败: {failed_count}, 总数: {len(all_results)}")
 
-            # 检查是否需要停止整个工作流
-            if run_result.get("stop_workflow"):
-                print(f"\n⚠️  检测到函数修复3次仍然失败，停止整个工作流")
-                logger.warning(f"Task {task_id}: 函数修复失败，停止工作流")
-                break  # 跳出循环，不再处理其他子文件夹
+            # 判断总体返回码
+            if failed_count == 0:
+                return_code = "200"
+            elif success_count > 0:
+                return_code = "207"  # 部分成功
+            else:
+                return_code = "500"  # 全部失败
 
-    # 汇总结果
-    print(f"\n===== 运行结果汇总 =====")
 
-    # 检查是否因函数修复失败而停止
-    workflow_stopped = any(r.get("result", {}).get("stop_workflow", False) for r in all_results if not r.get("success"))
+        # ========== 阶段4: 结果汇总 ==========
+        # 注：修复逻辑已在 _run_scripts_for_subdir 中通过循环处理
+        logger.info(f"Task {task_id}: 所有子文件夹运行完成")
 
-    if workflow_stopped:
-        print(f"成功: {success_count}, 失败: {failed_count}, 总数: {len(all_results)}")
-        print(f"⚠️  工作流因函数修复失败而停止，未完成所有子文件夹的运行")
-        return_code = "500"  # 因修复失败而停止
-    else:
-        print(f"成功: {success_count}, 失败: {failed_count}, 总数: {len(all_results)}")
-
-        # 判断总体返回码
-        if failed_count == 0:
-            return_code = "200"
-        elif success_count > 0:
-            return_code = "207"  # 部分成功
+        # ========== 完成 ==========
+        if return_code == "200":
+            print("\n✓ ===== NETCONF 自动化测试流程完成 =====")
+        elif workflow_stopped:
+            print(f"\n❌ ===== NETCONF 自动化测试流程失败（函数修复失败） =====")
         else:
-            return_code = "500"  # 全部失败
+            print(f"\n⚠️  NETCONF 自动化测试流程完成（部分失败）")
 
-    return_info = {
-        "success_count": success_count,
-        "failed_count": failed_count,
-        "total_count": len(all_results),
-        "results": all_results,
-        "workflow_stopped": workflow_stopped
-    }
+        logger.info(f"Task {task_id}: 任务完成")
 
-    # ========== 阶段4: 结果汇总 ==========
-    # 注：修复逻辑已在 _run_scripts_for_subdir 中通过循环处理
-    logger.info(f"Task {task_id}: 所有子文件夹运行完成")
-
-    # ========== 完成 ==========
-    if return_code == "200":
-        print("\n✓ ===== NETCONF 自动化测试流程完成 =====")
-    elif workflow_stopped:
-        print(f"\n❌ ===== NETCONF 自动化测试流程失败（函数修复失败） =====")
-    else:
-        print(f"\n⚠️  NETCONF 自动化测试流程完成（部分失败）")
-
-    logger.info(f"Task {task_id}: 任务完成")
+    except asyncio.CancelledError:
+        # 任务被取消
+        print(f"\n⚠️  NETCONF 工作流已被用户取消")
+        logger.info(f"Task {task_id}: NETCONF 工作流被取消")
+        raise  # 重新抛出 CancelledError，让上层处理
 
 
-# ==================== 缺失的导入（测试用） ====================
-import asyncio
+# ==================== 辅助函数 ====================
 
 
 def update_task_status(task_id: str, status: str, stage: str):

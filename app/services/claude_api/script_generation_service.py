@@ -913,6 +913,8 @@ class ScriptGenerationService:
                 self.logger.error(f"保存统计数据失败: {metrics_error}")
             # ======================================
 
+            raise  # 重新抛出 CancelledError，让 task_cancellation_manager 正确处理
+
         except Exception as e:
             error_msg = f"自动化测试流程执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
             self.logger.error(f"Task {task_id}: {error_msg}")
@@ -964,10 +966,9 @@ class ScriptGenerationService:
         yang_files: list
     ):
         """
-        执行 NETCONF 测试脚本生成流程：
-        1. 读取 YANG 文件
-        2. 生成 NETCONF 测试脚本
-        3. 调用 ITC run 执行脚本
+        执行 NETCONF 测试脚本生成流程
+
+        调用 netconf_workflow.execute_netconf_workflow 执行完整的 NETCONF 工作流
 
         Args:
             task_id: 任务ID
@@ -978,86 +979,68 @@ class ScriptGenerationService:
         task_logger.write_start_log(task_id, "NETCONF 脚本生成任务")
         task_logger.write_log(task_id, f"YANG 文件: {', '.join(yang_files)}")
 
+        # ========== 统计：获取或创建流程统计记录 ==========
+        from app.services.metrics_service import metrics_service
+        test_point = f"基于以下 YANG 文件生成 NETCONF 测试脚本: {', '.join(yang_files)}"
+        flow_id = metrics_service.get_or_create_current_flow(test_point, workspace)
+        # =================================================
+
+        # ========== 统计：记录 NETCONF 脚本生成开始时间 ==========
+        netconf_start_time = datetime.now()
+        # =====================================================
+
         try:
             # 更新任务状态为运行中
             self._update_task_status(task_id, "running", "NETCONF脚本生成")
             self._send_message(task_id, "info", "开始执行 NETCONF 脚本生成任务", "processing")
 
-            # ========== 阶段1: 生成 NETCONF 测试脚本 ==========
-            self.logger.info(f"Task {task_id}: 开始生成 NETCONF 测试脚本")
-            task_logger.write_log(task_id, "===== 阶段1: 生成 NETCONF 测试脚本 =====")
+            task_logger.write_log(task_id, f"ℹ️ 工作目录: {workspace}")
+            task_logger.write_log(task_id, f"ℹ️ YANG 文件: {', '.join(yang_files)}")
+            task_logger.write_log(task_id, "===== 开始调用 NETCONF 工作流 =====")
 
-            # TODO: 实现具体的 NETCONF 脚本生成逻辑
-            # 1. 解析 YANG 文件
-            # 2. 生成对应的 NETCONF 测试脚本
-            yang_files_dir = os.path.join(workspace, "project", "yang_files")
-            task_logger.write_log(task_id, f"YANG 文件目录: {yang_files_dir}")
+            # 导入 NETCONF 工作流
+            from app.services.netconf.netconf_workflow import execute_netconf_workflow
 
-            for yang_file in yang_files:
-                yang_path = os.path.join(yang_files_dir, yang_file)
-                if os.path.exists(yang_path):
-                    task_logger.write_log(task_id, f"✓ 找到 YANG 文件: {yang_file}")
-                else:
-                    task_logger.write_log(task_id, f"⚠ YANG 文件不存在: {yang_file}")
-
-            # 调用具体的业务函数（待实现）
-            await self._generate_netconf_script(task_id, workspace, yang_files)
-
-            # ========== 阶段2: 调用 ITC run 执行脚本 ==========
-            self.logger.info(f"Task {task_id}: 开始调用 ITC run 接口")
-            self._update_task_status(task_id, "running", "ITC脚本执行")
-            task_logger.write_log(task_id, "\n===== 阶段2: 执行测试脚本 =====")
-
-            # 获取 executorip
-            executorip = settings.get_deploy_executor_ip()
-
-            if not executorip:
-                task_logger.write_log(task_id, "❌ 未找到部署的执行机IP，请先部署组网占用环境")
-                self._update_task_status(task_id, "failed", "ITC脚本执行")
-                task_logger.write_end_log(task_id, "failed")
-                return
-
-            task_logger.write_log(task_id, f"ℹ️ 执行机IP: {executorip}")
-
-            # 构造脚本路径
-            scriptspath = settings.get_aigc_tool_unc_dir()
-
-            task_logger.write_log(task_id, f"ℹ️ 脚本路径: {scriptspath}")
-            task_logger.write_log(task_id, "⏳ 正在调用 ITC run 接口...")
-
-            # 调用 ITC run 接口
-            from app.services.itc.itc_service import itc_service
-            from app.models.itc.itc_models import RunScriptRequest
-
-            itc_request = RunScriptRequest(
-                scriptspath=scriptspath,
-                executorip=executorip
+            # 调用 execute_netconf_workflow 执行完整流程
+            # 内部包含：
+            # 1. 准备依赖材料
+            # 2. 生成 NETCONF 测试脚本
+            # 3. 运行测试脚本
+            # 4. 解析结果并修复（如果需要）
+            await execute_netconf_workflow(
+                task_id=task_id,
+                test_point=test_point,
+                workspace=workspace
             )
 
-            try:
-                result = await itc_service.run_script(itc_request)
-            except Exception as e:
-                self.logger.error(f"Task {task_id}: ITC run 调用异常: {str(e)}")
-                result = {
-                    "return_code": "500",
-                    "return_info": f"ITC run 调用异常: {str(e)}",
-                    "result": None
-                }
+            # ========== 统计：记录 NETCONF 脚本生成耗时 ==========
+            netconf_end_time = datetime.now()
+            metrics_service.record_script_duration(flow_id, netconf_start_time, netconf_end_time)
+            # ==================================================
 
-            self.logger.info(f"Task {task_id}: ITC run 接口返回: {result}")
+            # ========== 统计：保存完成状态 ==========
+            metrics_service.save_flow(flow_id, status="completed")
+            # ====================================
 
-            # 发送结果消息
-            try:
-                result_message = self._return_code_to_message(result)
-                task_logger.write_log(task_id, f"\n📊 ITC 执行结果:\n{result_message}")
-            except Exception as e:
-                self.logger.error(f"Task {task_id}: 发送 ITC 结果消息失败: {str(e)}")
-                task_logger.write_log(task_id, "⚠️ ITC run 执行完成，但结果解析失败")
-
-            # 更新任务状态为完成
-            self._update_task_status(task_id, "completed", "ITC脚本执行")
             task_logger.write_log(task_id, "\n===== NETCONF 脚本生成流程完成 =====")
             task_logger.write_end_log(task_id, "completed")
+            self._update_task_status(task_id, "completed", "NETCONF脚本生成")
+
+        except asyncio.CancelledError:
+            # 任务被取消
+            self.logger.info(f"Task {task_id}: NETCONF 脚本生成任务被取消")
+            self._update_task_status(task_id, "cancelled")
+            task_logger.write_log(task_id, "⚠️ NETCONF 脚本生成任务已被用户取消")
+            task_logger.write_end_log(task_id, "cancelled")
+
+            # ========== 统计：保存取消状态 ==========
+            try:
+                metrics_service.save_flow(flow_id, status="cancelled")
+            except Exception as metrics_error:
+                self.logger.error(f"保存统计数据失败: {metrics_error}")
+            # ======================================
+
+            raise  # 重新抛出 CancelledError，让 task_cancellation_manager 正确处理
 
         except Exception as e:
             error_msg = f"NETCONF 脚本生成流程执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
@@ -1066,48 +1049,15 @@ class ScriptGenerationService:
             self._update_task_status(task_id, "failed")
             task_logger.write_log(task_id, f"❌ {error_msg}")
 
+            # ========== 统计：保存失败状态 ==========
+            try:
+                metrics_service.save_flow(flow_id, status="failed")
+            except Exception as metrics_error:
+                self.logger.error(f"保存统计数据失败: {metrics_error}")
+            # ====================================
+
             # 写入任务结束标识
             task_logger.write_end_log(task_id, "failed")
-
-    async def _generate_netconf_script(
-        self,
-        task_id: str,
-        workspace: str,
-        yang_files: list
-    ):
-        """
-        生成 NETCONF 测试脚本的具体业务逻辑
-
-        Args:
-            task_id: 任务ID
-            workspace: 工作目录
-            yang_files: YANG 文件名列表
-
-        TODO: 实现具体的 NETCONF 脚本生成逻辑
-        """
-        # TODO: 在这里实现具体的 NETCONF 脚本生成业务逻辑
-        # 1. 解析 YANG 文件，提取数据模型
-        # 2. 根据数据模型生成 NETCONF 测试脚本
-        # 3. 将生成的脚本保存到指定目录
-
-        task_logger.write_log(task_id, "ℹ️ NETCONF 脚本生成逻辑待实现")
-        task_logger.write_log(task_id, f"ℹ️ 工作目录: {workspace}")
-        task_logger.write_log(task_id, f"ℹ️ YANG 文件数量: {len(yang_files)}")
-
-        # 示例：记录每个 YANG 文件的路径
-        yang_files_dir = os.path.join(workspace, "project", "yang_files")
-        for yang_file in yang_files:
-            yang_path = os.path.join(yang_files_dir, yang_file)
-            if os.path.exists(yang_path):
-                # 读取文件内容（示例）
-                try:
-                    with open(yang_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        task_logger.write_log(task_id, f"ℹ️ {yang_file} 大小: {len(content)} 字节")
-                except Exception as e:
-                    task_logger.write_log(task_id, f"⚠ 读取 {yang_file} 失败: {str(e)}")
-
-        task_logger.write_log(task_id, "✓ NETCONF 脚本生成逻辑执行完成（待实现具体逻辑）")
 
 
     # ==================== Claude Chat 流程 ====================
@@ -1183,6 +1133,7 @@ class ScriptGenerationService:
             self._update_task_status(task_id, "cancelled")
             task_logger.write_log(task_id, "⚠️ Claude Chat 任务已被用户取消")
             task_logger.write_end_log(task_id, "cancelled")
+            raise  # 重新抛出 CancelledError，让 task_cancellation_manager 正确处理
 
         except Exception as e:
             error_msg = f"Claude Chat 任务执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
