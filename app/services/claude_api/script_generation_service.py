@@ -890,7 +890,8 @@ class ScriptGenerationService:
                 # 更新任务状态为完成
                 self._update_task_status(task_id, "completed", "ITC脚本执行")
                 task_logger.write_log(task_id, "\n===== 自动化测试流程完成 =====")
-
+                task_logger.write_log(task_id, f"ℹ️ 执行机IP: {executorip}，账号:itc 密码:auto_123")
+                task_logger.write_log(task_id, f"ℹ️ 脚本路径: {scriptspath}")
                 # 写入任务结束标识
                 task_logger.write_end_log(task_id, "completed")
 
