@@ -235,8 +235,32 @@ async def run_script(request: RunSingleScriptRequest):
         # 使用本地路径作为目标目录
         target_dir = settings.get_aigc_tool_local_dir(username)
 
-        # 确保目标目录存在
+        # 确保目标目录存在并设置权限为 777
         os.makedirs(target_dir, exist_ok=True)
+
+        # 递归设置目录权限为 777
+        def set_permissions_recursive(path, mode):
+            """递归设置目录及其所有内容的权限"""
+            try:
+                os.chmod(path, mode)
+                for root, dirs, files in os.walk(path):
+                    for dir_name in dirs:
+                        dir_path = os.path.join(root, dir_name)
+                        try:
+                            os.chmod(dir_path, mode)
+                        except Exception as e:
+                            logger.warning(f"设置目录权限失败 {dir_path}: {e}")
+                    for file_name in files:
+                        file_path = os.path.join(root, file_name)
+                        try:
+                            os.chmod(file_path, mode)
+                        except Exception as e:
+                            logger.warning(f"设置文件权限失败 {file_path}: {e}")
+            except Exception as e:
+                logger.warning(f"设置根目录权限失败 {path}: {e}")
+
+        set_permissions_recursive(target_dir, 0o777)
+        logger.info(f"已设置 AIGC 工具目录权限: {target_dir}")
 
         # 获取请求的脚本路径
         script_path = request.script_path
@@ -268,7 +292,7 @@ async def run_script(request: RunSingleScriptRequest):
         # ========== 第2步：根据 script_path 参数拷贝文件 ==========
         # 设置目录权限为 755 (rwxr-xr-x)
         try:
-            os.chmod(target_dir, 0o755)
+            os.chmod(target_dir, 0o777)
         except Exception as e:
             logger.warning(f"设置目标目录权限失败: {str(e)}")
 
