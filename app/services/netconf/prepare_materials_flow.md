@@ -48,8 +48,8 @@
                            ▼
          ┌───────────────────────────────────────┐
          │ 步骤4: 调用 Claude Agent               │
-         │ Skill: netconf_test_script_generation │
-         │        _material_preparation           │
+         │ Skill: netconf-test-script-generation │
+         │        -material-preparation           │
          └───────────────────────────────────────┘
                            │
                            ▼
@@ -128,11 +128,11 @@ options = ClaudeAgentOptions(
 
 ### 步骤4: 调用 Claude Agent
 
-**Skill 名称**: `netconf_test_script_generation_material_preparation`
+**Skill 名称**: `netconf-test-script-generation-material-preparation`
 
 **Prompt 示例**：
 ```
-在工作区 {workspace} 调用 skill: netconf_test_script_generation_material_preparation,
+在工作区 {workspace} 调用 skill: netconf-test-script-generation-material-preparation,
 
 此 skill 会自动执行以下操作：
 - 将 Word API 文档转换为 Markdown 格式，生成 `converted_docs/` 目录

@@ -149,7 +149,7 @@ async def stream_test_script_response(test_point: str, workspace: str = "", task
     )
 
     print("🚀 正在发送请求以触发 Skill...\n")
-    prompt = escape_all_special_chars(f"调用 skill: test_script_generate ,生成以下测试点的测试脚本，生成的文件保存到工作区:{workspace}，测试点如下：{test_point}")
+    prompt = escape_all_special_chars(f"调用 skill: test-script-generate ,生成以下测试点的测试脚本，生成的文件保存到工作区:{workspace}，测试点如下：{test_point}")
 
     # 处理转义字符
     try:
@@ -237,7 +237,7 @@ async def stream_fix_script_response(return_msg: str = "", workspace: str = "", 
     )
 
     print("🚀 正在发送请求以触发 Skill...\n")
-    prompt = escape_all_special_chars(f"请分析脚本运行日志：{return_msg}中的错误，调用 skill: script_fix 修复工作区:{workspace}内的conftest.py和pytest脚本")
+    prompt = escape_all_special_chars(f"请分析脚本运行日志：{return_msg}中的错误，调用 skill: script-fix 修复工作区:{workspace}内的conftest.py和pytest脚本")
     print("========================")
     print(prompt)
     # 处理转义字符
