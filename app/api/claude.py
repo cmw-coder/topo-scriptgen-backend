@@ -201,6 +201,71 @@ async def get_task_log(task_id: str):
         raise HTTPException(status_code=500, detail=f"获取任务日志失败: {str(e)}")
 
 
+@router.post("/claude-chat", response_model=BaseResponse)
+async def claude_chat(
+    request: dict,
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """
+    直接调用 Claude Code SDK 处理用户输入
+
+    请求参数（JSON Body）：
+    - **prompt**: 用户输入的prompt
+
+    不预设prompt模板，直接将用户输入传递给Claude Code SDK处理
+
+    返回taskId，前端可以通过 GET /api/v1/claude/task-log/{task_id} 获取执行日志
+    """
+    try:
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 从请求中获取prompt
+        prompt = request.get("prompt", "")
+        if not prompt:
+            raise HTTPException(status_code=400, detail="prompt参数不能为空")
+
+        # 生成唯一任务ID
+        task_id = str(uuid.uuid4())
+
+        # 获取工作目录
+        workspace = settings.get_work_directory()
+
+        # 使用 task_manager 创建任务
+        task_manager.create_task(
+            task_id=task_id,
+            test_point=prompt,
+            workspace=workspace
+        )
+
+        logger.info(f"创建claude-chat任务: task_id={task_id}, prompt={prompt[:50]}...")
+
+        # 添加后台任务执行
+        background_tasks.add_task(
+            script_generation_service.execute_claude_chat_pipeline,
+            task_id,
+            prompt,
+            workspace
+        )
+
+        return BaseResponse(
+            status="ok",
+            message="Claude Chat 任务已启动",
+            data={
+                "task_id": task_id,
+                "log_url": f"/api/v1/claude/task-log/{task_id}"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"创建claude-chat任务失败: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"创建claude-chat任务失败: {str(e)}")
+
+
 @router.post("/generate-netconf-script", response_model=BaseResponse)
 async def generate_netconf_script(
     files: List[UploadFile] = File(..., description="YANG 文件列表（支持多个文件上传）"),

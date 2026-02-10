@@ -198,3 +198,62 @@ async def stream_fix_script_response(return_msg: str = "", workspace: str = ""):
 if __name__ == "__main__":
     # 使用 async for 来消费上面定义的生成器
     asyncio.run(main())
+
+
+async def stream_claude_chat_response(prompt: str, workspace: str = ""):
+    """
+    直接调用 Claude Code SDK 处理用户输入，不预设 prompt 模板
+
+    Args:
+        prompt: 用户输入的prompt
+        workspace: 工作目录
+
+    Yields:
+        message: Claude Agent SDK 返回的消息对象
+    """
+    if not workspace:
+        current_user = getpass.getuser()
+        workspace = f"/home/{current_user}/project"
+    print(f"📂 设置工作区为: {workspace}")
+
+    # 确保目录存在
+    if not os.path.exists(workspace):
+        os.makedirs(workspace, exist_ok=True)
+
+    # 配置选项
+    options = ClaudeAgentOptions(
+        # 1. 设置当前工作目录 (Current Working Directory)
+        cwd=workspace,
+
+        # 2. 启用项目设置加载，不加project, 避免读取项目下的claude.md
+        setting_sources=["user"],
+
+        # 3. 权限模式 (自动接受以演示流程)
+        permission_mode="bypassPermissions",
+
+        # 4. 允许的工具
+        allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
+
+        # system_prompt={"type": "preset", "preset": "claude_code"}
+    )
+
+    print("🚀 正在发送请求到 Claude Code SDK...\n")
+
+    # 不预设prompt模板，直接使用用户输入
+    processed_prompt = escape_all_special_chars(prompt)
+    print("========================")
+    print(f"Prompt: {processed_prompt[:200]}...")
+    print("========================")
+
+    try:
+        async for message in query(
+            prompt=processed_prompt,
+            options=options
+        ):
+            # 流式返回对象
+            yield message
+
+    except Exception as e:
+        print(f"❌ 发生错误: {e}")
+        # 返回错误消息
+        yield type('Error', (), {'error': True, 'content': str(e)})()

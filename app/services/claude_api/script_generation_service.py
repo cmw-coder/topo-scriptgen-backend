@@ -1096,5 +1096,83 @@ class ScriptGenerationService:
         task_logger.write_log(task_id, "✓ NETCONF 脚本生成逻辑执行完成（待实现具体逻辑）")
 
 
+    # ==================== Claude Chat 流程 ====================
+
+    async def execute_claude_chat_pipeline(self, task_id: str, prompt: str, workspace: str):
+        """
+        执行 Claude Chat 流程：
+        直接调用 Claude Code SDK 处理用户输入，不预设 prompt 模板
+
+        Args:
+            task_id: 任务ID
+            prompt: 用户输入的prompt
+            workspace: 工作目录
+        """
+        # 导入消息解析器
+        from app.utils.claude_message_parser import ClaudeMessageParser
+        parser = ClaudeMessageParser()
+
+        # 写入任务开始标识
+        task_logger.write_start_log(task_id, "Claude Chat 任务")
+        task_logger.write_log(task_id, f"用户输入: {prompt[:200]}...")
+
+        def send_message_log(message_type: str, data: str, stage: str = ""):
+            """写入消息到日志文件"""
+            try:
+                stage_prefix = f"[{stage}] " if stage else ""
+                log_content = f"{stage_prefix}[{message_type}] {data[:300]}"
+                task_logger.write_log(task_id, log_content)
+            except Exception as e:
+                self.logger.error(f"Task {task_id}: 写入日志失败: {str(e)}")
+
+        try:
+            # 更新任务状态为运行中
+            self._update_task_status(task_id, "running", "Claude处理")
+            send_message_log("info", f"开始执行 Claude Chat 任务\n用户输入: {prompt[:200]}...", "Claude处理")
+
+            # 调用 Claude Code SDK 处理用户输入
+
+            from app.services.cc_workflow import stream_claude_chat_response
+
+            # 重置解析器计数器
+            parser.reset_counters()
+            message_count = 0
+
+            async for message in stream_claude_chat_response(prompt=prompt, workspace=workspace):
+                message_count += 1
+
+                # 使用消息解析器解析消息
+                parsed_info = parser.parse_message(message, stage="Claude处理")
+
+                # 只记录需要记录的信息
+                if parsed_info["should_log"]:
+                    log_entry = parser.format_log_entry(parsed_info)
+                    if log_entry:
+                        task_logger.write_log(task_id, log_entry)
+
+                # 判断是否是错误消息
+                is_error = getattr(message, 'error', False) if hasattr(message, 'error') else False
+                if is_error:
+                    self._update_task_status(task_id, "failed", "Claude处理")
+                    task_logger.write_log(task_id, "❌ Claude Chat 处理失败")
+                    task_logger.write_end_log(task_id, "failed")
+                    return
+
+            # 更新任务状态为完成
+            self._update_task_status(task_id, "completed", "Claude处理")
+            task_logger.write_log(task_id, "\n===== Claude Chat 任务完成 =====")
+            task_logger.write_end_log(task_id, "completed")
+
+        except Exception as e:
+            error_msg = f"Claude Chat 任务执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
+            self.logger.error(f"Task {task_id}: {error_msg}")
+
+            self._update_task_status(task_id, "failed")
+            task_logger.write_log(task_id, f"❌ {error_msg}")
+
+            # 写入任务结束标识
+            task_logger.write_end_log(task_id, "failed")
+
+
 # 创建全局单例
 script_generation_service = ScriptGenerationService()
