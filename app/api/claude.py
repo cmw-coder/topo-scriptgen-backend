@@ -7,12 +7,13 @@ Claude Code API 路由层
 import uuid
 import os
 from typing import List
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.models.common import BaseResponse
 from app.services.claude_api.task_manager import task_manager
+from app.services.claude_api.task_cancellation_manager import task_cancellation_manager
 from app.services.claude_api.script_generation_service import script_generation_service
 
 router = APIRouter(prefix="/claude", tags=["Claude Code"])
@@ -30,8 +31,7 @@ class GenerateScriptRequest(BaseModel):
 
 @router.post("/generate-script", response_model=BaseResponse)
 async def generate_test_script(
-    request: GenerateScriptRequest,
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    request: GenerateScriptRequest
 ):
     """
     根据设备命令生成测试脚本的快捷接口
@@ -76,13 +76,12 @@ async def generate_test_script(
 
         logger.info(f"创建generate-script任务: task_id={task_id}, script={script_path}")
 
-        # 添加后台任务执行完整流程（脚本回写 + 拷贝 + ITC run）
-        background_tasks.add_task(
-            script_generation_service.execute_full_pipeline,
-            task_id,
-            script_full_path,
-            script_filename,
-            device_commands
+        # 使用 task_cancellation_manager 创建后台任务（支持取消）
+        task_cancellation_manager.create_task(
+            task_id=task_id,
+            coro=script_generation_service.execute_full_pipeline(
+                task_id, script_full_path, script_filename, device_commands
+            )
         )
 
         return BaseResponse(
@@ -107,8 +106,7 @@ async def generate_test_script(
 
 @router.post("/prompt", response_model=BaseResponse)
 async def execute_custom_command(
-    prompt: str = Query(..., description="claude用户输入"),
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    prompt: str = Query(..., description="claude用户输入")
 ):
     """
     执行完整的自动化测试流程：
@@ -137,12 +135,12 @@ async def execute_custom_command(
 
         logger.info(f"创建prompt任务: task_id={task_id}, test_point={prompt[:50]}...")
 
-        # 添加后台任务执行完整流程
-        background_tasks.add_task(
-            script_generation_service.execute_prompt_pipeline,
-            task_id,
-            prompt,
-            workspace
+        # 使用 task_cancellation_manager 创建后台任务（支持取消）
+        task_cancellation_manager.create_task(
+            task_id=task_id,
+            coro=script_generation_service.execute_prompt_pipeline(
+                task_id, prompt, workspace
+            )
         )
 
         return BaseResponse(
@@ -203,8 +201,7 @@ async def get_task_log(task_id: str):
 
 @router.post("/claude-chat", response_model=BaseResponse)
 async def claude_chat(
-    request: dict,
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    request: dict
 ):
     """
     直接调用 Claude Code SDK 处理用户输入
@@ -240,12 +237,12 @@ async def claude_chat(
 
         logger.info(f"创建claude-chat任务: task_id={task_id}, prompt={prompt[:50]}...")
 
-        # 添加后台任务执行
-        background_tasks.add_task(
-            script_generation_service.execute_claude_chat_pipeline,
-            task_id,
-            prompt,
-            workspace
+        # 使用 task_cancellation_manager 创建后台任务（支持取消）
+        task_cancellation_manager.create_task(
+            task_id=task_id,
+            coro=script_generation_service.execute_claude_chat_pipeline(
+                task_id, prompt, workspace
+            )
         )
 
         return BaseResponse(
@@ -268,8 +265,7 @@ async def claude_chat(
 
 @router.post("/generate-netconf-script", response_model=BaseResponse)
 async def generate_netconf_script(
-    files: List[UploadFile] = File(..., description="YANG 文件列表（支持多个文件上传）"),
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    files: List[UploadFile] = File(..., description="YANG 文件列表（支持多个文件上传）")
 ):
     """
     根据上传的 YANG 文件生成 NETCONF 测试脚本
@@ -296,8 +292,8 @@ async def generate_netconf_script(
         workspace = settings.get_work_directory()
 
         # 构建目录路径
-        yang_files_dir = os.path.join(workspace, "project", "yang_files")
-        project_dir = os.path.join(workspace, "project")
+        yang_files_dir = os.path.join(workspace,  "yang_files")
+        project_dir = os.path.join(workspace)
         os.makedirs(yang_files_dir, exist_ok=True)
         os.makedirs(project_dir, exist_ok=True)
 
@@ -346,12 +342,12 @@ async def generate_netconf_script(
 
         logger.info(f"创建generate-netconf-script任务: task_id={task_id}, files={saved_files}")
 
-        # 添加后台任务执行完整流程
-        background_tasks.add_task(
-            script_generation_service.execute_netconf_script_pipeline,
-            task_id,
-            workspace,
-            saved_files
+        # 使用 task_cancellation_manager 创建后台任务（支持取消）
+        task_cancellation_manager.create_task(
+            task_id=task_id,
+            coro=script_generation_service.execute_netconf_script_pipeline(
+                task_id, workspace, saved_files
+            )
         )
 
         return BaseResponse(
@@ -376,3 +372,111 @@ async def generate_netconf_script(
         logger = logging.getLogger(__name__)
         logger.error(f"创建generate-netconf-script任务失败: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"创建 NETCONF 脚本生成任务失败: {str(e)}")
+
+
+@router.post("/cancel-task/{task_id}", response_model=BaseResponse)
+async def cancel_task(task_id: str):
+    """
+    取消正在进行的任务
+
+    参数：
+    - **task_id**: 任务ID（即log_id）
+
+    返回取消操作的结果，并同步刷新任务日志
+
+    支持取消的任务类型：
+    - /claude/prompt 创建的自动化测试流程任务
+    - /claude/claude-chat 创建的 Claude Chat 任务
+    """
+    try:
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"收到取消任务请求: task_id={task_id}")
+
+        # 调用取消管理器取消任务
+        result = await task_cancellation_manager.cancel_task(task_id)
+
+        # 获取当前任务状态
+        task_info = task_manager.get_task(task_id)
+
+        response_data = {
+            "task_id": task_id,
+            **result
+        }
+
+        # 如果取消成功，记录日志
+        if result.get("success"):
+            # 更新任务管理器中的状态
+            if task_info:
+                task_manager.update_status(task_id, "cancelled")
+
+            # 写入取消日志到日志文件
+            from app.services.claude_api.task_logger import task_logger
+            task_logger.write_log(task_id, "⚠️ 用户请求取消任务")
+            task_logger.write_end_log(task_id, "cancelled")
+
+            return BaseResponse(
+                status="ok",
+                message=result.get("message", "任务取消成功"),
+                data=response_data
+            )
+        else:
+            # 取消失败（任务不存在或已完成）
+            status_code = 404 if result.get("status") == "not_found" else 400
+            return BaseResponse(
+                status="error",
+                message=result.get("message", "任务取消失败"),
+                data=response_data
+            )
+
+    except Exception as e:
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"取消任务失败: task_id={task_id}, error={str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"取消任务失败: {str(e)}")
+
+
+@router.get("/task-status/{task_id}", response_model=BaseResponse)
+async def get_task_status(task_id: str):
+    """
+    获取任务状态信息
+
+    参数：
+    - **task_id**: 任务ID
+
+    返回任务的当前状态和运行信息
+    """
+    try:
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 从任务管理器获取任务信息
+        task_info = task_manager.get_task(task_id)
+
+        if task_info is None:
+            raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+        # 检查任务是否在取消管理器中
+        running_tasks = task_cancellation_manager.get_all_running_tasks()
+        is_running = task_id in running_tasks
+
+        return BaseResponse(
+            status="ok",
+            message="成功获取任务状态",
+            data={
+                "task_id": task_id,
+                "status": task_info.get("status", "unknown"),
+                "stage": task_info.get("stage", ""),
+                "is_running": is_running,
+                "created_at": task_info.get("created_at", ""),
+                "messages_count": len(task_info.get("messages", []))
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        logging.getLogger(__name__).error(f"获取任务状态失败: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"获取任务状态失败: {str(e)}")

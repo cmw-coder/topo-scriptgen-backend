@@ -551,7 +551,7 @@ class ScriptGenerationService:
 
             message_count = 0
             conftest_failed = False
-            async for message in stream_generate_conftest_response(test_point=test_point, workspace=workspace):
+            async for message in stream_generate_conftest_response(test_point=test_point, workspace=workspace, task_id=task_id):
                 message_count += 1
 
                 # 使用消息解析器解析消息
@@ -669,7 +669,7 @@ class ScriptGenerationService:
             parser.reset_counters()
             message_count = 0
 
-            async for message in stream_test_script_response(test_point=test_point, workspace=workspace):
+            async for message in stream_test_script_response(test_point=test_point, workspace=workspace, task_id=task_id):
                 message_count += 1
 
                 # 使用消息解析器解析消息
@@ -815,7 +815,7 @@ class ScriptGenerationService:
                 parser.reset_counters()
                 message_count = 0
 
-                async for message in stream_fix_script_response(return_msg=result_message, workspace=workspace):
+                async for message in stream_fix_script_response(return_msg=result_message, workspace=workspace, task_id=task_id):
                     message_count += 1
                     # 使用消息解析器解析消息
                     parsed_info = parser.parse_message(message, stage="测试脚本修复")
@@ -899,6 +899,20 @@ class ScriptGenerationService:
             # ===========================================
 
         # 最外面的try
+        except asyncio.CancelledError:
+            # 任务被取消
+            self.logger.info(f"Task {task_id}: 任务被取消")
+            self._update_task_status(task_id, "cancelled")
+            task_logger.write_log(task_id, "⚠️ 任务已被用户取消")
+            task_logger.write_end_log(task_id, "cancelled")
+
+            # ========== 统计：保存取消状态 ==========
+            try:
+                metrics_service.save_flow(flow_id, status="cancelled")
+            except Exception as metrics_error:
+                self.logger.error(f"保存统计数据失败: {metrics_error}")
+            # ======================================
+
         except Exception as e:
             error_msg = f"自动化测试流程执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"
             self.logger.error(f"Task {task_id}: {error_msg}")
@@ -1138,7 +1152,7 @@ class ScriptGenerationService:
             parser.reset_counters()
             message_count = 0
 
-            async for message in stream_claude_chat_response(prompt=prompt, workspace=workspace):
+            async for message in stream_claude_chat_response(prompt=prompt, workspace=workspace, task_id=task_id):
                 message_count += 1
 
                 # 使用消息解析器解析消息
@@ -1162,6 +1176,13 @@ class ScriptGenerationService:
             self._update_task_status(task_id, "completed", "Claude处理")
             task_logger.write_log(task_id, "\n===== Claude Chat 任务完成 =====")
             task_logger.write_end_log(task_id, "completed")
+
+        except asyncio.CancelledError:
+            # 任务被取消
+            self.logger.info(f"Task {task_id}: Claude Chat 任务被取消")
+            self._update_task_status(task_id, "cancelled")
+            task_logger.write_log(task_id, "⚠️ Claude Chat 任务已被用户取消")
+            task_logger.write_end_log(task_id, "cancelled")
 
         except Exception as e:
             error_msg = f"Claude Chat 任务执行失败: {str(e)}\n\n堆栈信息:\n{traceback.format_exc()}"

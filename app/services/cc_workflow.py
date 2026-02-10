@@ -2,15 +2,11 @@ import asyncio
 import os
 import json
 import getpass
+from typing import Optional
 from claude_agent_sdk import (
-    query, 
-    ClaudeAgentOptions, 
-    AssistantMessage, 
-    ToolUseBlock, 
-    TextBlock
+    query,
+    ClaudeAgentOptions
 )
-
-import os
 
 # 要删除的代理环境变, 避免检索时使用代理
 proxy_vars = ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]
@@ -39,7 +35,21 @@ def escape_all_special_chars(text: str) -> str:
 
 
 
-async def stream_generate_conftest_response(test_point: str, workspace: str = ""):
+async def stream_generate_conftest_response(test_point: str, workspace: str = "", task_id: Optional[str] = None):
+    """
+    生成 conftest.py 的流式响应函数，支持取消操作
+
+    Args:
+        test_point: 测试点描述
+        workspace: 工作目录
+        task_id: 任务ID，用于支持取消操作
+
+    Yields:
+        message: Claude Agent SDK 返回的消息对象
+    """
+    # 导入取消管理器（仅在有 task_id 时使用）
+    from app.services.claude_api.task_cancellation_manager import task_cancellation_manager
+
     if not workspace:
         current_user = getpass.getuser()
         workspace = f"/home/{current_user}/project"
@@ -56,11 +66,11 @@ async def stream_generate_conftest_response(test_point: str, workspace: str = ""
         cwd=workspace,
 
         # 2. 启用项目设置加载，不加project, 避免读取项目下的claude.md
-        setting_sources=["user"], 
-        
+        setting_sources=["user"],
+
         # 3. 权限模式 (自动接受以演示流程)
         permission_mode="bypassPermissions",
-        
+
         # 4. 允许的工具
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
 
@@ -74,19 +84,43 @@ async def stream_generate_conftest_response(test_point: str, workspace: str = ""
     # 处理转义字符
     try:
         async for message in query(
-            prompt=prompt, 
+            prompt=prompt,
             options=options
         ):
+            # 在每次收到消息时检查是否被取消
+            if task_id and task_cancellation_manager.is_cancelled(task_id):
+                print(f"⚠️ 任务 {task_id} 已被取消，中断 conftest 生成")
+                # 抛出 CancelledError 来中断生成器
+                raise asyncio.CancelledError(f"任务 {task_id} 已被取消")
+
             # 流式返回对象
             yield message
 
+    except asyncio.CancelledError:
+        print(f"⚠️ Conftest 生成任务 {task_id} 已被取消")
+        # 重新抛出取消异常，让调用者处理
+        raise
     except Exception as e:
         print(f"❌ 发生错误: {e}")
 
 
 
 
-async def stream_test_script_response(test_point: str, workspace: str = ""):
+async def stream_test_script_response(test_point: str, workspace: str = "", task_id: Optional[str] = None):
+    """
+    生成测试脚本的流式响应函数，支持取消操作
+
+    Args:
+        test_point: 测试点描述
+        workspace: 工作目录
+        task_id: 任务ID，用于支持取消操作
+
+    Yields:
+        message: Claude Agent SDK 返回的消息对象
+    """
+    # 导入取消管理器（仅在有 task_id 时使用）
+    from app.services.claude_api.task_cancellation_manager import task_cancellation_manager
+
     if not workspace:
         current_user = getpass.getuser()
         workspace = f"/home/{current_user}/project"
@@ -103,11 +137,11 @@ async def stream_test_script_response(test_point: str, workspace: str = ""):
         cwd=workspace,
 
         # 2. 启用项目设置加载，不加project, 避免读取项目下的claude.md
-        setting_sources=["user"], 
-        
+        setting_sources=["user"],
+
         # 3. 权限模式 (自动接受以演示流程)
         permission_mode="bypassPermissions",
-        
+
         # 4. 允许的工具
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
 
@@ -120,12 +154,22 @@ async def stream_test_script_response(test_point: str, workspace: str = ""):
     # 处理转义字符
     try:
         async for message in query(
-            prompt=prompt, 
+            prompt=prompt,
             options=options
         ):
+            # 在每次收到消息时检查是否被取消
+            if task_id and task_cancellation_manager.is_cancelled(task_id):
+                print(f"⚠️ 任务 {task_id} 已被取消，中断测试脚本生成")
+                # 抛出 CancelledError 来中断生成器
+                raise asyncio.CancelledError(f"任务 {task_id} 已被取消")
+
             # 流式返回对象
             yield message
 
+    except asyncio.CancelledError:
+        print(f"⚠️ 测试脚本生成任务 {task_id} 已被取消")
+        # 重新抛出取消异常，让调用者处理
+        raise
     except Exception as e:
         print(f"❌ 发生错误: {e}")
 
@@ -150,7 +194,21 @@ async def main():
         print(msg) 
 
 
-async def stream_fix_script_response(return_msg: str = "", workspace: str = ""):
+async def stream_fix_script_response(return_msg: str = "", workspace: str = "", task_id: Optional[str] = None):
+    """
+    修复脚本的流式响应函数，支持取消操作
+
+    Args:
+        return_msg: 脚本运行返回的错误消息
+        workspace: 工作目录
+        task_id: 任务ID，用于支持取消操作
+
+    Yields:
+        message: Claude Agent SDK 返回的消息对象
+    """
+    # 导入取消管理器（仅在有 task_id 时使用）
+    from app.services.claude_api.task_cancellation_manager import task_cancellation_manager
+
     if not workspace:
         current_user = getpass.getuser()
         workspace = f"/home/{current_user}/project"
@@ -167,11 +225,11 @@ async def stream_fix_script_response(return_msg: str = "", workspace: str = ""):
         cwd=workspace,
 
         # 2. 启用项目设置加载，不加project, 避免读取项目下的claude.md
-        setting_sources=["user"], 
-        
+        setting_sources=["user"],
+
         # 3. 权限模式 (自动接受以演示流程)
         permission_mode="bypassPermissions",
-        
+
         # 4. 允许的工具
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
 
@@ -185,12 +243,22 @@ async def stream_fix_script_response(return_msg: str = "", workspace: str = ""):
     # 处理转义字符
     try:
         async for message in query(
-            prompt=prompt, 
+            prompt=prompt,
             options=options
         ):
+            # 在每次收到消息时检查是否被取消
+            if task_id and task_cancellation_manager.is_cancelled(task_id):
+                print(f"⚠️ 任务 {task_id} 已被取消，中断脚本修复")
+                # 抛出 CancelledError 来中断生成器
+                raise asyncio.CancelledError(f"任务 {task_id} 已被取消")
+
             # 流式返回对象
             yield message
 
+    except asyncio.CancelledError:
+        print(f"⚠️ 脚本修复任务 {task_id} 已被取消")
+        # 重新抛出取消异常，让调用者处理
+        raise
     except Exception as e:
         print(f"❌ 发生错误: {e}")
 
@@ -200,17 +268,21 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 
-async def stream_claude_chat_response(prompt: str, workspace: str = ""):
+async def stream_claude_chat_response(prompt: str, workspace: str = "", task_id: Optional[str] = None):
     """
     直接调用 Claude Code SDK 处理用户输入，不预设 prompt 模板
 
     Args:
         prompt: 用户输入的prompt
         workspace: 工作目录
+        task_id: 任务ID，用于支持取消操作
 
     Yields:
         message: Claude Agent SDK 返回的消息对象
     """
+    # 导入取消管理器（仅在有 task_id 时使用）
+    from app.services.claude_api.task_cancellation_manager import task_cancellation_manager
+
     if not workspace:
         current_user = getpass.getuser()
         workspace = f"/home/{current_user}/project"
@@ -250,9 +322,19 @@ async def stream_claude_chat_response(prompt: str, workspace: str = ""):
             prompt=processed_prompt,
             options=options
         ):
+            # 在每次收到消息时检查是否被取消
+            if task_id and task_cancellation_manager.is_cancelled(task_id):
+                print(f"⚠️ 任务 {task_id} 已被取消，中断 Claude SDK 调用")
+                # 抛出 CancelledError 来中断生成器
+                raise asyncio.CancelledError(f"任务 {task_id} 已被取消")
+
             # 流式返回对象
             yield message
 
+    except asyncio.CancelledError:
+        print(f"⚠️ Claude Chat 任务 {task_id} 已被取消")
+        # 重新抛出取消异常，让调用者处理
+        raise
     except Exception as e:
         print(f"❌ 发生错误: {e}")
         # 返回错误消息
