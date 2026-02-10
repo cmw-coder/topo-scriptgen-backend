@@ -17,7 +17,7 @@ import time
 import re
 import tempfile
 import shutil
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 def validate_uuid(uuid):
     """
@@ -371,6 +371,226 @@ def is_copied_file(file_path):
     except OSError:
         # 如果无法获取时间信息，默认不是复制文件
         return False
+
+
+def get_files_modified_in_window(project_root, start_time, end_time=None, file_extensions=None, exclude_dirs=None):
+    """
+    获取在指定时间窗口内修改或创建的文件
+
+    Args:
+        project_root: 项目根目录
+        start_time: 时间窗口开始时间（时间戳）
+        end_time: 时间窗口结束时间（时间戳），默认为当前时间
+        file_extensions: 需要处理的文件扩展名列表，如 ['.py']，默认为 None（所有文件）
+        exclude_dirs: 需要排除的目录名列表，默认为 ['.venv', '.claude', '.git', '__pycache__', 'venv', 'env']
+
+    Returns:
+        list: 修改时间在时间窗口内的文件路径列表
+    """
+    if end_time is None:
+        end_time = time.time()
+
+    if exclude_dirs is None:
+        exclude_dirs = {'.venv', '.claude', '.git', '__pycache__', 'venv', 'env', '.pytest_cache', '.tox', 'dist', 'build', '.eggs', '*.egg-info'}
+
+    if file_extensions is None:
+        file_extensions = ['.py']
+
+    modified_files = []
+
+    for root, dirs, files in os.walk(project_root):
+        # 过滤掉不需要的目录
+        dirs[:] = [d for d in dirs if d not in exclude_dirs and not d.startswith('.')]
+
+        for file in files:
+            # 检查文件扩展名
+            if file_extensions:
+                if not any(file.endswith(ext) for ext in file_extensions):
+                    continue
+
+            file_path = os.path.join(root, file)
+
+            try:
+                # 获取文件修改时间
+                mtime = os.path.getmtime(file_path)
+
+                # 检查修改时间是否在时间窗口内
+                if start_time <= mtime <= end_time:
+                    modified_files.append(file_path)
+
+            except OSError:
+                # 如果无法获取文件时间，跳过
+                continue
+
+    return modified_files
+
+
+def add_fingerprints_for_modified_files(project_root, start_time, end_time, file_extensions=None, exclude_dirs=None, filename_prefix=None, exclude_filename_prefix=None):
+    """
+    为时间窗口内修改的文件批量添加指纹（封装常用逻辑）
+
+    Args:
+        project_root: 项目根目录
+        start_time: 时间窗口开始时间
+        end_time: 时间窗口结束时间
+        file_extensions: 文件扩展名列表，默认 ['.py']
+        exclude_dirs: 排除的目录列表
+        filename_prefix: 只处理指定前缀的文件（如 'test_'），None 表示不限制
+        exclude_filename_prefix: 排除指定前缀的文件（如 'test_example'），None 表示不限制
+
+    Returns:
+        dict: {file_path: success} 的字典
+    """
+    modified_files = get_files_modified_in_window(
+        project_root=project_root,
+        start_time=start_time,
+        end_time=end_time,
+        file_extensions=file_extensions,
+        exclude_dirs=exclude_dirs
+    )
+
+    # 根据前缀过滤
+    if filename_prefix is not None:
+        modified_files = [f for f in modified_files if os.path.basename(f).startswith(filename_prefix)]
+
+    if exclude_filename_prefix is not None:
+        modified_files = [f for f in modified_files if not os.path.basename(f).startswith(exclude_filename_prefix)]
+
+    if modified_files:
+        return add_fingerprint_to_files(modified_files)
+
+    return {}
+
+
+class FileModificationTracker:
+    """
+    文件修改追踪器 - 用于追踪函数执行期间修改的文件
+
+    使用方法：
+        with FileModificationTracker(project_root, file_extensions=['.py']) as tracker:
+            # 执行可能修改文件的操作
+            ...
+
+        # 获取执行期间修改的文件
+        modified_files = tracker.get_modified_files()
+    """
+
+    def __init__(self, project_root, file_extensions=None, exclude_dirs=None):
+        """
+        初始化追踪器
+
+        Args:
+            project_root: 项目根目录
+            file_extensions: 需要追踪的文件扩展名列表
+            exclude_dirs: 需要排除的目录名列表
+        """
+        self.project_root = project_root
+        self.file_extensions = file_extensions if file_extensions else ['.py']
+        self.exclude_dirs = exclude_dirs
+        self.start_time = None
+        self.end_time = None
+        self._modified_files = []
+
+    def __enter__(self):
+        """进入上下文，记录开始时间"""
+        self.start_time = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """退出上下文，记录结束时间并收集修改的文件"""
+        _ = exc_type, exc_val, exc_tb  # 避免未使用变量警告
+        self.end_time = time.time()
+        self._modified_files = get_files_modified_in_window(
+            self.project_root,
+            self.start_time,
+            self.end_time,
+            self.file_extensions,
+            self.exclude_dirs
+        )
+        return False
+
+    def get_modified_files(self):
+        """获取在追踪期间修改的文件列表"""
+        return self._modified_files
+
+    def add_fingerprints_to_modified_files(self):
+        """
+        为追踪期间修改的文件添加指纹
+
+        Returns:
+            dict: {file_path: success} 的字典，表示每个文件的处理结果
+        """
+        results = {}
+        for file_path in self._modified_files:
+            # 跳过以 test_example 开头的文件
+            if os.path.basename(file_path).startswith('test_example'):
+                continue
+
+            uuid = generate_unique_id()
+            success, _ = add_fingerprint_to_file(file_path, uuid)
+            results[file_path] = success
+
+        return results
+
+
+# ==================== 函数：为函数执行期间修改的文件添加指纹并返回 UUID ====================
+
+def add_fingerprints_and_return_uuids(
+    project_root: str,
+    start_time: float,
+    file_extensions: Optional[List[str]] = None,
+    exclude_dirs: Optional[set] = None,
+    filename_prefix: Optional[str] = None,
+    exclude_filename_prefix: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    为时间窗口内修改的文件添加指纹并返回 UUID 映射
+
+    Args:
+        project_root: 项目根目录
+        start_time: 时间窗口开始时间（函数入口时间）
+        file_extensions: 文件扩展名列表，默认 ['.py']
+        exclude_dirs: 排除的目录集合
+        filename_prefix: 只处理指定前缀的文件（如 'test_'）
+        exclude_filename_prefix: 排除指定前缀的文件（如 'test_example'）
+
+    Returns:
+        {file_path: uuid} 字典，成功添加指纹的文件及其 UUID
+    """
+    # 自动获取当前时间作为结束时间
+    end_time = time.time()
+
+    if file_extensions is None:
+        file_extensions = ['.py']
+    if exclude_dirs is None:
+        exclude_dirs = {'.venv', '.claude', '.git', '__pycache__', 'venv', 'env', '.pytest_cache', '.tox', 'dist', 'build', '.eggs', '*.egg-info'}
+
+    # 获取修改的文件
+    modified_files = get_files_modified_in_window(
+        project_root=project_root,
+        start_time=start_time,
+        end_time=end_time,
+        file_extensions=file_extensions,
+        exclude_dirs=exclude_dirs
+    )
+
+    # 根据前缀过滤
+    if filename_prefix is not None:
+        modified_files = [f for f in modified_files if os.path.basename(f).startswith(filename_prefix)]
+
+    if exclude_filename_prefix is not None:
+        modified_files = [f for f in modified_files if not os.path.basename(f).startswith(exclude_filename_prefix)]
+
+    # 为每个文件添加指纹并返回 UUID 映射
+    uuid_map = {}
+    for file_path in modified_files:
+        uuid = generate_unique_id()
+        success, _ = add_fingerprint_to_file(file_path, uuid)
+        if success:
+            uuid_map[file_path] = uuid
+
+    return uuid_map
+
 
 def get_session_start_time():
     """获取会话开始时间"""

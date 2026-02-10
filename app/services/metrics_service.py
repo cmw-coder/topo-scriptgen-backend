@@ -525,6 +525,39 @@ class MetricsService:
             logger.error(f"更新流程文件失败: flow_id={flow_id}, error={e}")
             return False
 
+    def set_ai_fingerprints(self, flow_id: str, fingerprints: dict) -> bool:
+        """
+        设置流程的 AI 指纹 UUID
+
+        Args:
+            flow_id: 流程 ID
+            fingerprints: {文件路径: UUID} 字典
+
+        Returns:
+            是否设置成功
+        """
+        import os
+
+        flow = self._flows.get(flow_id)
+        if not flow:
+            logger.warning(f"流程 {flow_id} 不存在，无法设置 AI 指纹")
+            return False
+
+        # 设置 ai_fingerprint_uuids 字段
+        flow.ai_fingerprint_uuids = fingerprints
+
+        # 同时写入 write_script_metrics
+        if not flow.write_script_metrics:
+            flow.write_script_metrics = {}
+        for file_path, uuid_value in fingerprints.items():
+            file_name = os.path.basename(file_path)
+            if file_name not in flow.write_script_metrics:
+                flow.write_script_metrics[file_name] = {}
+            flow.write_script_metrics[file_name]['ai_fingerprint_uuid'] = uuid_value
+
+        logger.debug(f"已为流程 {flow_id} 设置 {len(fingerprints)} 个 AI 指纹")
+        return True
+
     def _recalculate_total_debug_duration(self, flow: WorkflowMetrics) -> float:
         """
         重新计算 total_debug_duration（所有 command_debug 和 write_script 的总和）

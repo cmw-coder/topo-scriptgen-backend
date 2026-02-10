@@ -13,6 +13,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -512,6 +513,9 @@ class ScriptGenerationService:
             test_point: 测试点描述
             workspace: 工作目录
         """
+        # 记录函数入口时间
+        pipeline_start_time = time.time()
+
         # 导入消息解析器
         from app.utils.claude_message_parser import ClaudeMessageParser
         parser = ClaudeMessageParser()
@@ -700,35 +704,6 @@ class ScriptGenerationService:
             self.logger.info(f"Task {task_id}: 测试脚本生成完成，共处理 {message_count} 条消息")
             task_logger.write_log(task_id, f"✓ 测试脚本生成完成 (处理了 {message_count} 条消息)")
 
-            # 添加AI指纹到生成的测试脚本
-            try:
-                import time
-
-                # 查找 workspace 中最近生成的 test_*.py 文件
-                recent_threshold = time.time() - 900  # 最近15分钟
-                test_files = []
-                for root, dirs, files in os.walk(workspace):
-                    # 跳过虚拟环境目录
-                    dirs[:] = [d for d in dirs if d.lower() not in
-                              ('venv', '.venv', 'env', '.env', '__pycache__', '.git')]
-                    for file in files:
-                        if file.startswith('test_') and file.endswith('.py'):
-                            file_path = os.path.join(root, file)
-                            try:
-                                if os.path.getctime(file_path) >= recent_threshold:
-                                    test_files.append(file_path)
-                            except OSError:
-                                pass
-
-                if test_files:
-                    results = add_aifinger_hook.add_fingerprint_to_files(test_files)
-                    success_count = sum(1 for v in results.values() if v)
-                    self.logger.info(f"Task {task_id}: 已为 {success_count}/{len(test_files)} 个测试脚本添加AI指纹")
-                    if success_count > 0:
-                        self.logger.info(f"✓ 已为 {success_count} 个测试脚本添加AI指纹")
-            except Exception as fingerprint_err:
-                self.logger.warning(f"Task {task_id}: 添加测试脚本AI指纹失败: {str(fingerprint_err)}")
-
             # ========== 阶段3: 调用 ITC run 接口执行脚本 ==========
             self.logger.info(f"Task {task_id}: 开始调用 ITC run 接口")
             self._update_task_status(task_id, "running", "ITC脚本执行")
@@ -895,6 +870,21 @@ class ScriptGenerationService:
                 # 写入任务结束标识
                 task_logger.write_end_log(task_id, "completed")
 
+            # ========== 为函数执行期间修改的 test_*.py 文件添加 AI 指纹 ==========
+            try:
+                fingerprint_uuids = add_aifinger_hook.add_fingerprints_and_return_uuids(
+                    project_root=workspace,
+                    start_time=pipeline_start_time,
+                    filename_prefix='test_'
+                )
+
+                if fingerprint_uuids:
+                    metrics_service.set_ai_fingerprints(flow_id, fingerprint_uuids)
+                    self.logger.info(f"Task {task_id}: 已为 {len(fingerprint_uuids)} 个test_文件添加AI指纹并存入flow")
+            except Exception as fingerprint_err:
+                self.logger.warning(f"Task {task_id}: 为test_文件添加AI指纹失败: {str(fingerprint_err)}")
+            # ===================================================================
+
             # ========== 统计：保存流程统计数据 ==========
             metrics_service.save_flow(flow_id, status="completed")
             # ===========================================
@@ -976,6 +966,10 @@ class ScriptGenerationService:
             workspace: 工作目录
             yang_files: YANG 文件名列表
         """
+        # 记录函数入口时间
+        import time
+        pipeline_start_time = time.time()
+
         # 写入任务开始标识
         task_logger.write_start_log(task_id, "NETCONF 脚本生成任务")
         task_logger.write_log(task_id, f"YANG 文件: {', '.join(yang_files)}")
@@ -1018,6 +1012,22 @@ class ScriptGenerationService:
             netconf_end_time = datetime.now()
             metrics_service.record_script_duration(flow_id, netconf_start_time, netconf_end_time)
             # ==================================================
+
+            # ========== 为函数执行期间修改的 Python 文件添加 AI 指纹 ==========
+            try:
+                fingerprint_uuids = add_aifinger_hook.add_fingerprints_and_return_uuids(
+                    project_root=workspace,
+                    start_time=pipeline_start_time,
+                    exclude_filename_prefix='test_example',
+                    exclude_dirs={'.venv', '.claude', '.git', '__pycache__', 'venv', 'env', '.pytest_cache', '.tox', 'dist', 'build', '.eggs', '*.egg-info', 'yang_files'}
+                )
+
+                if fingerprint_uuids:
+                    metrics_service.set_ai_fingerprints(flow_id, fingerprint_uuids)
+                    self.logger.info(f"Task {task_id}: 已为 {len(fingerprint_uuids)} 个文件添加AI指纹并存入flow")
+            except Exception as fingerprint_err:
+                self.logger.warning(f"Task {task_id}: 为文件添加AI指纹失败: {str(fingerprint_err)}")
+            # ===================================================================
 
             # ========== 统计：保存完成状态 ==========
             metrics_service.save_flow(flow_id, status="completed")

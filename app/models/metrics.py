@@ -56,6 +56,9 @@ class WorkflowMetrics(BaseModel):
     # 写脚本时间指标（按文件记录）
     write_script_metrics: Optional[dict] = Field(None, description="写脚本时间指标数据（按文件记录）")
 
+    # AI 指纹 UUID 映射（文件路径 -> UUID）
+    ai_fingerprint_uuids: Optional[dict] = Field(None, description="AI 指纹 UUID 映射（文件路径 -> UUID）")
+
     # 总调试/写脚本时间（秒）- command_debug_metrics 和 write_script_metrics 所有文件的总和
     total_debug_duration: Optional[float] = Field(None, description="总调试/写脚本时间（秒）- 所有文件的 command_debug 和 write_script 总和")
 
