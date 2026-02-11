@@ -121,6 +121,9 @@ class MetricsServiceV2:
         # 当前正在进行的活动（key 为 activity_id，value 为 script_uuid）
         self._pending_activities: Dict[str, str] = {}
 
+        # 脚本 UUID 到文件名的映射（用于通过 script_uuid 快速定位文件）
+        self._script_uuid_to_file: Dict[str, Path] = {}
+
         # ========== 启动优化：只恢复状态，不加载所有数据 ==========
         # 1. 恢复当前活跃脚本 UUID（持久化的状态）
         self._restore_session_state()
@@ -155,10 +158,10 @@ class MetricsServiceV2:
             fallback_dir.mkdir(parents=True, exist_ok=True)
             return fallback_dir
 
-    def _get_script_file_path(self, script_uuid: str) -> Path:
-        """获取脚本统计文件路径"""
+    def _get_script_file_path(self, ai_fingerprint_uuid: str) -> Path:
+        """获取脚本统计文件路径，使用 AI 指纹 UUID 作为文件名"""
         metrics_dir = self._get_metrics_dir()
-        return metrics_dir / f"script_{script_uuid}.json"
+        return metrics_dir / f"script_{ai_fingerprint_uuid}.json"
 
     def _get_deploy_file_path(self, deploy_time: datetime) -> Path:
         """
@@ -249,6 +252,46 @@ class MetricsServiceV2:
             self._load_all_scripts()
             self._scripts_loaded = True
 
+    def _ensure_deploys_loaded(self):
+        """确保所有部署记录已加载（延迟加载）"""
+        with self._lock:
+            if self._deploys_loaded:
+                return
+
+            logger.info("开始延迟加载所有部署记录...")
+            self._load_all_deploys()
+            self._deploys_loaded = True
+
+    def _load_all_deploys(self):
+        """加载所有部署记录（仅在需要时调用）"""
+        try:
+            metrics_dir = self._get_metrics_dir()
+            deploylog_dir = metrics_dir / "deploylog"
+
+            if not deploylog_dir.exists():
+                logger.info("部署记录目录不存在")
+                return
+
+            # 扫描所有部署记录文件
+            deploy_files = list(deploylog_dir.glob("deploy-*.json"))
+            if not deploy_files:
+                logger.info("没有找到部署记录文件")
+                return
+
+            logger.info(f"找到 {len(deploy_files)} 个部署记录文件，开始加载...")
+            for deploy_file in deploy_files:
+                try:
+                    with open(deploy_file, 'r', encoding='utf-8') as f:
+                        deploy_data = json.load(f)
+                    deploy_record = DeployRecord(**deploy_data)
+                    self._deploys[deploy_record.deploy_id] = deploy_record
+                except Exception as e:
+                    logger.warning(f"加载部署记录文件 {deploy_file.name} 失败: {e}")
+
+            logger.info(f"成功加载 {len(self._deploys)} 个部署记录")
+        except Exception as e:
+            logger.error(f"加载部署记录数据失败: {e}")
+
     def _load_all_scripts(self):
         """加载所有脚本数据（仅在需要时调用）"""
         try:
@@ -285,15 +328,32 @@ class MetricsServiceV2:
         script = ScriptMetrics(**script_data)
         self._scripts[script.script_uuid] = script
 
-        # 加载部署记录
-        for deploy_record in script.deploy_records:
-            self._deploys[deploy_record.deploy_id] = deploy_record
+        # 更新脚本 UUID 到文件名的映射
+        self._script_uuid_to_file[script.script_uuid] = script_file
+
+        # 验证文件名中的 AI 指纹 UUID 是否与脚本中的一致
+        file_stem = script_file.stem
+        if file_stem.startswith("script_"):
+            file_ai_fingerprint = file_stem.replace("script_", "")
+            if file_ai_fingerprint != script.ai_fingerprint_uuid:
+                logger.warning(
+                    f"文件名 AI 指纹 UUID 不匹配: "
+                    f"文件={file_ai_fingerprint}, "
+                    f"脚本={script.ai_fingerprint_uuid}"
+                )
+
+        # 加载部署记录（向后兼容：如果脚本文件中包含部署记录，加载到缓存）
+        if script.deploy_records:
+            for deploy_record in script.deploy_records:
+                if deploy_record.deploy_id not in self._deploys:
+                    self._deploys[deploy_record.deploy_id] = deploy_record
+            logger.debug(f"从脚本文件加载了 {len(script.deploy_records)} 个部署记录（向后兼容）")
 
         # 加载活动记录到缓存
         for activity in script.activity_records:
             self._activities[activity.activity_id] = activity
 
-        logger.debug(f"加载脚本: {script.script_name}, UUID={script.script_uuid}")
+        logger.debug(f"加载脚本: {script.script_name}, UUID={script.script_uuid}, AI指纹={script.ai_fingerprint_uuid}")
 
     def _load_script(self, script_uuid: str) -> Optional[ScriptMetrics]:
         """加载指定脚本的数据（按需加载）"""
@@ -303,16 +363,37 @@ class MetricsServiceV2:
 
         # 从文件加载
         try:
-            metrics_dir = self._get_metrics_dir()
-            script_file = metrics_dir / f"script_{script_uuid}.json"
+            # 先检查映射
+            script_file = self._script_uuid_to_file.get(script_uuid)
+            if script_file and script_file.exists():
+                self._load_script_from_file(script_file)
+                logger.info(f"按需加载脚本: {script_uuid}")
+                return self._scripts.get(script_uuid)
 
-            if not script_file.exists():
+            # 映射中没有，扫描目录查找文件
+            metrics_dir = self._get_metrics_dir()
+            script_files = list(metrics_dir.glob("script_*.json"))
+            found_file = None
+
+            for file_path in script_files:
+                try:
+                    # 快速读取文件内容，只提取 script_uuid 字段
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    if data.get("script_uuid") == script_uuid:
+                        found_file = file_path
+                        break
+                except Exception as e:
+                    logger.warning(f"读取文件失败 {file_path}: {e}")
+                    continue
+
+            if found_file:
+                self._load_script_from_file(found_file)
+                logger.info(f"按需加载脚本（通过扫描）: {script_uuid}")
+                return self._scripts.get(script_uuid)
+            else:
                 logger.warning(f"脚本文件不存在: {script_uuid}")
                 return None
-
-            self._load_script_from_file(script_file)
-            logger.info(f"按需加载脚本: {script_uuid}")
-            return self._scripts.get(script_uuid)
 
         except Exception as e:
             logger.error(f"加载脚本 {script_uuid} 失败: {e}")
@@ -400,18 +481,36 @@ class MetricsServiceV2:
                 status="virtual"  # 标记为虚拟脚本
             )
 
-            # 检查是否有最新的部署记录，如果有则关联
+            # 确保部署记录已加载
+            self._ensure_deploys_loaded()
+
+            # 检查是否有最新的部署记录，如果有则关联到虚拟脚本
             if self._latest_deploy_id and self._latest_deploy_id in self._deploys:
                 deploy_record = self._deploys[self._latest_deploy_id]
-                # 复制部署记录（避免共享引用）
-                virtual_deploy = DeployRecord(**deploy_record.model_dump())
-                virtual_script.deploy_records.append(virtual_deploy)
 
-                logger.info(f"关联最新部署记录到虚空记录:")
-                logger.info(f"  deploy_id={deploy_record.deploy_id}")
-                logger.info(f"  部署调用时间={deploy_record.deploy_call_time}")
-                logger.info(f"  部署完成时间={deploy_record.deploy_complete_time}")
-                logger.info(f"  部署耗时={deploy_record.deploy_duration}秒")
+                # 检查部署记录是否已经被关联
+                if deploy_record.associated_script_ai_fingerprint:
+                    logger.info(
+                        f"部署记录 {self._latest_deploy_id} 已经被脚本关联: "
+                        f"AI指纹={deploy_record.associated_script_ai_fingerprint}，跳过关联"
+                    )
+                else:
+                    # 更新部署记录中的活跃文件信息和关联信息
+                    deploy_record.active_file_at_deploy = f"{workspace}/__virtual__.py"
+                    deploy_record.active_file_name_at_deploy = "__virtual__.py"
+                    deploy_record.active_ai_fingerprint_at_deploy = virtual_fingerprint
+                    deploy_record.active_script_uuid_at_deploy = virtual_script_uuid
+                    deploy_record.associated_script_ai_fingerprint = virtual_fingerprint
+
+                    # 持久化更新后的部署记录
+                    self._save_deploy_record(deploy_record)
+
+                    logger.info(f"关联最新部署记录到虚空记录:")
+                    logger.info(f"  deploy_id={deploy_record.deploy_id}")
+                    logger.info(f"  部署调用时间={deploy_record.deploy_call_time}")
+                    logger.info(f"  部署完成时间={deploy_record.deploy_complete_time}")
+                    logger.info(f"  部署耗时={deploy_record.deploy_duration}秒")
+                    logger.info(f"  关联AI指纹={virtual_fingerprint}")
 
             # 保存虚拟脚本到内存
             self._scripts[virtual_script_uuid] = virtual_script
@@ -535,12 +634,14 @@ class MetricsServiceV2:
         if not self._workspace:
             self._workspace = str(script_path_obj.parent)
 
-        # 检查当前活跃脚本是否是虚拟脚本，如果是则提示
+        # 检查当前活跃脚本是否是虚拟脚本，如果是则提示并保存引用
         is_switching_from_virtual = False
+        virtual_script = None
         if self._current_script_uuid:
             current_script = self._scripts.get(self._current_script_uuid)
             if current_script and current_script.status == "virtual":
                 is_switching_from_virtual = True
+                virtual_script = current_script
                 logger.info("=" * 60)
                 logger.info(f"检测到当前活跃的是虚拟脚本 ({current_script.script_name})")
                 logger.info(f"将切换到真实脚本: {script_path_obj.name}")
@@ -587,32 +688,90 @@ class MetricsServiceV2:
         # 更新当前活跃脚本
         self._current_script_uuid = script_uuid
 
-        # 如果有最新的部署记录，关联到该脚本
+        # 确保部署记录已加载
+        self._ensure_deploys_loaded()
+
+        # 如果有最新的部署记录，关联到该脚本（只能关联一次）
         if self._latest_deploy_id and self._latest_deploy_id in self._deploys:
             deploy_record = self._deploys[self._latest_deploy_id]
 
-            # ========== 更新部署记录中的活跃文件信息 ==========
-            # 更新原始部署记录
-            deploy_record.active_file_at_deploy = str(script_path_obj.absolute())
-            deploy_record.active_file_name_at_deploy = script_path_obj.name
-            deploy_record.active_ai_fingerprint_at_deploy = ai_fingerprint_uuid
-            deploy_record.active_script_uuid_at_deploy = script_uuid
+            # 检查部署记录是否已经被关联
+            if deploy_record.associated_script_ai_fingerprint:
+                logger.info(
+                    f"部署记录 {self._latest_deploy_id} 已经被脚本关联: "
+                    f"AI指纹={deploy_record.associated_script_ai_fingerprint}，跳过关联"
+                )
+            else:
+                # ========== 更新部署记录中的活跃文件信息和关联信息 ==========
+                # 更新原始部署记录
+                deploy_record.active_file_at_deploy = str(script_path_obj.absolute())
+                deploy_record.active_file_name_at_deploy = script_path_obj.name
+                deploy_record.active_ai_fingerprint_at_deploy = ai_fingerprint_uuid
+                deploy_record.active_script_uuid_at_deploy = script_uuid
+                # 设置关联脚本的AI指纹
+                deploy_record.associated_script_ai_fingerprint = ai_fingerprint_uuid
 
-            # 持久化更新后的部署记录
-            self._save_deploy_record(deploy_record)
+                # 持久化更新后的部署记录
+                self._save_deploy_record(deploy_record)
 
-            logger.info(
-                f"更新部署记录的活跃文件信息: "
-                f"deploy_id={self._latest_deploy_id}, "
-                f"file={script_path_obj.name}, "
-                f"AI指纹={ai_fingerprint_uuid}"
-            )
-            # ================================================
+                logger.info(
+                    f"部署记录关联到脚本: "
+                    f"deploy_id={self._latest_deploy_id}, "
+                    f"file={script_path_obj.name}, "
+                    f"AI指纹={ai_fingerprint_uuid}"
+                )
+                # ================================================
 
-            # 复制部署记录（避免共享引用）
-            script_deploy = DeployRecord(**deploy_record.model_dump())
-            script_metrics.deploy_records.append(script_deploy)
-            logger.info(f"脚本关联最新部署: deploy_id={self._latest_deploy_id}")
+                # 注意：不再复制部署记录到脚本的 deploy_records 字段
+                # 查询脚本关联的部署记录需要通过扫描部署记录文件
+                # script_deploy = DeployRecord(**deploy_record.model_dump())
+                # script_metrics.deploy_records.append(script_deploy)
+                # logger.info(f"脚本关联最新部署: deploy_id={self._latest_deploy_id}")
+
+        # 如果是从虚拟脚本切换，转移数据到新脚本
+        if is_switching_from_virtual and virtual_script:
+            logger.info("=" * 60)
+            logger.info("开始将虚拟脚本的数据转移到新脚本")
+            logger.info(f"虚拟脚本: {virtual_script.script_name}, UUID={virtual_script.script_uuid}")
+            logger.info(f"新脚本: {script_metrics.script_name}, UUID={script_metrics.script_uuid}")
+
+            # 转移累计时长
+            script_metrics.keep_alive_duration += virtual_script.keep_alive_duration
+            script_metrics.command_debug_duration += virtual_script.command_debug_duration
+            script_metrics.write_script_duration += virtual_script.write_script_duration
+
+            # 转移耗时记录列表（合并，保留所有记录）
+            script_metrics.write_back_durations.extend(virtual_script.write_back_durations)
+            script_metrics.itc_run_durations.extend(virtual_script.itc_run_durations)
+
+            # 转移活动记录（合并）
+            script_metrics.activity_records.extend(virtual_script.activity_records)
+
+            # 转移部署记录（已弃用，不再使用 deploy_records 字段）
+            # 虚拟脚本可能关联了部署记录，需要将这些部署记录的关联信息更新为新脚本
+            if virtual_script.ai_fingerprint_uuid:
+                # 确保部署记录已加载
+                self._ensure_deploys_loaded()
+                updated_count = 0
+                for deploy_id, deploy_record in self._deploys.items():
+                    # 如果部署记录关联到虚拟脚本的AI指纹，更新为新脚本的AI指纹
+                    if deploy_record.associated_script_ai_fingerprint == virtual_script.ai_fingerprint_uuid:
+                        deploy_record.associated_script_ai_fingerprint = ai_fingerprint_uuid
+                        self._save_deploy_record(deploy_record)
+                        updated_count += 1
+                if updated_count > 0:
+                    logger.info(f"更新了 {updated_count} 个部署记录的关联信息: 从虚拟脚本 {virtual_script.ai_fingerprint_uuid} 到新脚本 {ai_fingerprint_uuid}")
+
+            logger.info(f"数据转移完成:")
+            logger.info(f"  keep_alive_duration: {virtual_script.keep_alive_duration} -> {script_metrics.keep_alive_duration}")
+            logger.info(f"  command_debug_duration: {virtual_script.command_debug_duration} -> {script_metrics.command_debug_duration}")
+            logger.info(f"  write_script_duration: {virtual_script.write_script_duration} -> {script_metrics.write_script_duration}")
+            logger.info(f"  write_back_durations: {len(virtual_script.write_back_durations)} 条记录")
+            logger.info(f"  itc_run_durations: {len(virtual_script.itc_run_durations)} 条记录")
+            logger.info(f"  activity_records: {len(virtual_script.activity_records)} 条记录")
+            # 部署记录不再存储在脚本中，通过关联字段管理
+            # 日志中显示虚拟脚本原有的部署记录数量（仅作参考）
+            logger.info("=" * 60)
 
         # 持久化脚本度量
         self._save_script_metrics(script_uuid)
@@ -638,7 +797,7 @@ class MetricsServiceV2:
         # 如果是从虚拟脚本切换，添加额外提示
         if is_switching_from_virtual:
             logger.info(f"成功从虚拟脚本切换到真实脚本: {script_path_obj.name}")
-            logger.info(f"虚拟脚本的度量数据已保留，可以继续记录活跃时间")
+            logger.info(f"虚拟脚本的度量数据已转移到新脚本")
 
         return script_uuid
 
@@ -820,6 +979,9 @@ class MetricsServiceV2:
         """
         username = self._get_username()
 
+        # 确保部署记录已加载
+        self._ensure_deploys_loaded()
+
         # 获取待完成的部署
         deploy_id = self._pending_deploys.get(username)
         if not deploy_id:
@@ -848,14 +1010,9 @@ class MetricsServiceV2:
         # 持久化
         self._save_deploy_record(deploy_record)
 
-        # 将部署记录关联到当前活跃脚本
-        script = self.get_current_script()
-        if script:
-            # 复制部署记录
-            script_deploy = DeployRecord(**deploy_record.model_dump())
-            script.deploy_records.insert(0, script_deploy)  # 插入到开头
-            script.last_active_time = datetime.now()
-            self._save_script_metrics(script.script_uuid)
+        # 注意：部署记录不再立即关联到当前活跃脚本
+        # 根据新需求，部署记录只被部署结束后第一个生成的脚本文件关联
+        # 关联逻辑在 create_script 方法中实现
 
         logger.info(
             f"完成部署: deploy_id={deploy_id}, "
@@ -877,6 +1034,9 @@ class MetricsServiceV2:
             是否成功
         """
         username = self._get_username()
+
+        # 确保部署记录已加载
+        self._ensure_deploys_loaded()
 
         deploy_id = self._pending_deploys.get(username)
         if not deploy_id:
@@ -1115,8 +1275,18 @@ class MetricsServiceV2:
         """
         script = self.get_current_script()
         if not script:
-            logger.warning("没有活跃脚本，跳过累加活跃时间")
-            return False
+            # 没有活跃脚本，创建虚拟脚本
+            logger.info("没有活跃脚本，创建虚拟脚本用于记录活跃时间")
+            try:
+                workspace = str(path_manager.get_project_root())
+                self._create_default_metrics_file(workspace)
+                script = self.get_current_script()
+                if not script:
+                    logger.warning("创建虚拟脚本失败，无法记录活跃时间")
+                    return False
+            except Exception as e:
+                logger.error(f"创建虚拟脚本失败: {e}")
+                return False
 
         script.keep_alive_duration = round(script.keep_alive_duration + interval, 2)
         script.last_active_time = datetime.now()
@@ -1356,7 +1526,14 @@ class MetricsServiceV2:
             success = self.add_keep_alive_duration(interval)
 
             if not success:
-                raise ValueError("没有活跃脚本，无法记录keep_alive时间")
+                # 即使失败也不抛出错误，返回默认响应
+                logger.warning("记录keep_alive时间失败，返回默认响应")
+                return {
+                    "type": metrics_type,
+                    "interval": interval,
+                    "keep_alive_duration": interval,
+                    "note": "记录失败，使用默认值"
+                }
 
             script = self.get_current_script()
             if script:
@@ -1374,10 +1551,13 @@ class MetricsServiceV2:
                     "keep_alive_duration": script.keep_alive_duration
                 }
             else:
+                # 理论上不会走到这里，因为add_keep_alive_duration应该已经创建了脚本
+                logger.warning("记录keep_alive时间后仍然没有活跃脚本")
                 return {
                     "type": metrics_type,
                     "interval": interval,
-                    "keep_alive_duration": interval
+                    "keep_alive_duration": interval,
+                    "note": "无活跃脚本，使用默认值"
                 }
 
         else:
@@ -1476,7 +1656,7 @@ class MetricsServiceV2:
                 logger.warning(f"脚本不存在: {script_uuid}")
                 return False
 
-            file_path = self._get_script_file_path(script_uuid)
+            file_path = self._get_script_file_path(script.ai_fingerprint_uuid)
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(
                     script.model_dump(mode='json'),
@@ -1485,6 +1665,8 @@ class MetricsServiceV2:
                     indent=2,
                     default=str
                 )
+            # 更新脚本 UUID 到文件名的映射
+            self._script_uuid_to_file[script_uuid] = file_path
             return True
         except Exception as e:
             logger.error(f"保存脚本指标失败: {e}")

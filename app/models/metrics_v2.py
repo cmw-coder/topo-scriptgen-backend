@@ -59,6 +59,13 @@ class DeployRecord(BaseModel):
     active_file_name_at_deploy: Optional[str] = Field(None, description="部署时的活跃文件名")
     active_ai_fingerprint_at_deploy: Optional[str] = Field(None, description="部署时的活跃AI指纹ID")
     active_script_uuid_at_deploy: Optional[str] = Field(None, description="部署时的活跃脚本内部UUID")
+
+    # ========== 新增：关联脚本信息 ==========
+    # 部署记录关联的脚本AI指纹（部署结束后第一个生成的脚本文件关联）
+    associated_script_ai_fingerprint: Optional[str] = Field(
+        None,
+        description="关联的脚本AI指纹ID（部署结束后第一个生成的脚本文件关联，只能关联一次）"
+    )
     # =======================================
 
     # 创建时间
@@ -110,10 +117,10 @@ class ScriptMetrics(BaseModel):
     # 生成信息
     created_at: datetime = Field(default_factory=datetime.now, description="脚本生成时间")
 
-    # 该脚本关联的所有部署记录（按时间倒序）
+    # 该脚本关联的所有部署记录（按时间倒序）- 已弃用，保留用于向后兼容
     deploy_records: List[DeployRecord] = Field(
         default_factory=list,
-        description="该脚本生命周期中的所有部署记录"
+        description="该脚本生命周期中的所有部署记录（已弃用，不再使用）"
     )
 
     # 该脚本的所有活动记录（按时间倒序）
