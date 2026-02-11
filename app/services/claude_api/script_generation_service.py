@@ -22,6 +22,8 @@ from typing import Dict, Any, Optional
 from app.core.config import settings
 from app.services.claude_api.task_manager import task_manager
 from app.services.claude_api.task_logger import task_logger
+from app.services.metrics_service_v2 import metrics_service_v2
+from app.models.metrics_v2 import ScriptType
 from app.utils import add_aifinger_hook
 
 
@@ -84,8 +86,66 @@ class ScriptGenerationService:
             else:
                 return f"✗ 执行失败 (错误码: {return_code})\n错误信息: {return_info}"
         except Exception as e:
-            self.logger.error(f"解析 ITC 返回结果失败: {str(e)}, result={result}")
+            self.logger.error(f"解析 ITC 返回结果失败: {str(e)}, result={result}", exc_info=True)
             return f"✗ 解析返回结果失败: {str(e)}"
+
+    def _record_write_back_metrics(self, script_full_path: str, script_filename: str, duration: float) -> None:
+        """记录脚本回写度量数据
+
+        Args:
+            script_full_path: 脚本完整路径
+            script_filename: 脚本文件名
+            duration: 回写耗时（秒）
+        """
+        try:
+            success = metrics_service_v2.add_write_back_duration(
+                duration=duration,
+                script_path=script_full_path
+            )
+            if success:
+                self.logger.info(f"度量 v2: 已设置活跃文件并记录回写耗时: {script_filename}, duration={duration}秒")
+            else:
+                self.logger.warning(f"度量 v2: 记录回写耗时失败: {script_filename}")
+        except Exception as metrics_error:
+            self.logger.warning(f"度量 v2: 记录回写耗时失败: {metrics_error}", exc_info=True)
+
+    def _record_itc_run_metrics(
+        self,
+        script_path: str,
+        duration: float,
+        return_code: str,
+        return_info: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """记录 ITC run 度量数据
+
+        Args:
+            script_path: 脚本路径（None表示使用当前活跃脚本）
+            duration: ITC run耗时（秒）
+            return_code: ITC返回码
+            return_info: ITC返回信息
+        """
+        try:
+            from app.core.config import settings
+
+            kwargs = {"duration": duration, "return_code": return_code}
+            if script_path:
+                kwargs["script_path"] = script_path
+            else:
+                # 当 script_path 为空时，尝试查找工作区中的 conftest.py 文件
+                work_dir = settings.get_work_directory()
+                conftest_source = os.path.join(work_dir, "conftest.py")
+                if os.path.exists(conftest_source):
+                    kwargs["script_path"] = conftest_source
+                    self.logger.info(f"script_path 为空，将 ITC 运行时间记录到 conftest.py 对应的度量记录")
+                else:
+                    self.logger.info(f"script_path 为空且工作区中不存在 conftest.py，将记录到当前活跃脚本")
+
+            success = metrics_service_v2.add_itc_run_duration(**kwargs)
+            if success:
+                script_name = os.path.basename(kwargs.get("script_path")) if kwargs.get("script_path") else "当前活跃脚本"
+                self.logger.info(f"度量 v2: 记录 ITC run 耗时到脚本 {script_name}, duration={duration}秒")
+        except Exception as metrics_error:
+            self.logger.warning(f"度量 v2: 记录 ITC run 失败: {metrics_error}", exc_info=True)
 
     # ==================== 完整流程：脚本回写 + 拷贝 + ITC run ====================
 
@@ -161,6 +221,10 @@ class ScriptGenerationService:
         """
         # 写入脚本信息（不再单独写入任务开始标识，避免重复）
         task_logger.write_log(task_id, f"脚本: {script_filename}")
+
+        # ========== 度量 v2：记录开始时间 ==========
+        write_back_start_time = datetime.now()
+        # ========================================
 
         try:
             # 更新任务状态为运行中
@@ -251,6 +315,12 @@ class ScriptGenerationService:
             except Exception as fingerprint_err:
                 self.logger.warning(f"Task {task_id}: 添加AI指纹失败: {str(fingerprint_err)}")
 
+            # ========== 度量 v2：根据脚本名找到对应的文件并记录为活跃文件 ==========
+            write_back_end_time = datetime.now()
+            write_back_duration = (write_back_end_time - write_back_start_time).total_seconds()
+
+            self._record_write_back_metrics(script_full_path, script_filename, write_back_duration)
+            # ===================================================================
 
             # ========== 脚本回写完成 ==========
             self._update_task_status(task_id, "completed")
@@ -461,10 +531,25 @@ class ScriptGenerationService:
             self._send_message(task_id, "info", "正在调用 ITC run 接口，请稍候...", "processing")
             self.logger.info(f"Task {task_id}: 调用 ITC run 接口: scriptspath={unc_path}, executorip={executorip}")
 
+            # ========== 度量 v2：记录ITC run开始时间 ==========
+            itc_run_start_time = datetime.now()
+            # ==============================================
+
             # 执行 ITC run
             result = await itc_service.run_script(itc_request)
 
             self.logger.info(f"Task {task_id}: ITC run 接口返回: {result}")
+
+            # ========== 度量 v2：记录 ITC run 耗时到指定脚本 ==========
+            itc_run_end_time = datetime.now()
+            itc_run_duration = (itc_run_end_time - itc_run_start_time).total_seconds()
+            self._record_itc_run_metrics(
+                script_path=script_full_path,
+                duration=itc_run_duration,
+                return_code=result.get("return_code", "unknown"),
+                return_info=result.get("return_info")
+            )
+            # ======================================================
 
             # 解析并返回结果
             return_code = result.get("return_code", "unknown")
@@ -520,11 +605,6 @@ class ScriptGenerationService:
         from app.utils.claude_message_parser import ClaudeMessageParser
         parser = ClaudeMessageParser()
 
-        # ========== 统计：获取或创建流程统计记录 ==========
-        from app.services.metrics_service import metrics_service
-        flow_id = metrics_service.get_or_create_current_flow(test_point, workspace)
-        # =================================================
-
         # 写入任务开始标识
         task_logger.write_start_log(task_id, "自动化测试流程")
         task_logger.write_log(task_id, f"测试点: {test_point[:100]}...")
@@ -542,6 +622,9 @@ class ScriptGenerationService:
             # 更新任务状态为运行中
             self._update_task_status(task_id, "running", "conftest生成")
             send_message_log("info", f"开始执行自动化测试流程\n测试点: {test_point[:100]}...", "conftest生成")
+
+            # 初始化 conftest.py 路径变量
+            conftest_path = None
 
             # ========== 阶段1: 生成 conftest.py ==========
             self.logger.info(f"Task {task_id}: 开始生成 conftest.py")
@@ -574,22 +657,26 @@ class ScriptGenerationService:
                     self._update_task_status(task_id, "failed", "conftest生成")
                     task_logger.write_log(task_id, "❌ conftest.py生成失败，终止流程")
                     task_logger.write_end_log(task_id, "failed")
-                    # ========== 统计：保存失败状态 ==========
-                    metrics_service.save_flow(flow_id, status="failed")
-                    # ======================================
                     return
 
-            # ========== 统计：记录生成conftest耗时 ==========
+            # ========== 度量 v2：创建 conftest 脚本记录 ==========
             conftest_end_time = datetime.now()
-            metrics_service.record_conftest_duration(flow_id, conftest_start_time, conftest_end_time)
+            conftest_duration = (conftest_end_time - conftest_start_time).total_seconds()
+            try:
+                # 查找 conftest.py 文件
+                conftest_files = glob.glob(os.path.join(workspace, "conftest.py"))
+                if conftest_files:
+                    conftest_path = conftest_files[0]  # 保存 conftest.py 路径
+                    conftest_uuid = metrics_service_v2.create_script(
+                        script_path=conftest_path,
+                        script_type=ScriptType.CONFTEST,
+                        generation_duration=conftest_duration
+                    )
+                    self.logger.info(f"度量 v2: 创建 conftest 脚本记录, uuid={conftest_uuid}")
+            except Exception as metrics_error:
+                self.logger.warning(f"度量 v2: 创建 conftest 脚本记录失败: {metrics_error}", exc_info=True)
             # ============================================
 
-            # ========== 统计：记录 Claude SDK 分析指标（后台执行，不阻塞主流程）==========
-            try:
-                # 使用 create_task 后台执行，不阻塞主流程
-                asyncio.create_task(metrics_service.record_claude_analysis_metrics(flow_id, getpass.getuser()))
-            except Exception as e:
-                self.logger.warning(f"记录 Claude 分析指标失败: {e}")
             # 休眠5秒后再执行后续业务
             await asyncio.sleep(5)
             # ============================================
@@ -691,15 +778,24 @@ class ScriptGenerationService:
                     self._update_task_status(task_id, "failed", "测试脚本生成")
                     task_logger.write_log(task_id, "❌ 测试脚本生成失败，终止流程")
                     task_logger.write_end_log(task_id, "failed")
-                    # ========== 统计：保存失败状态 ==========
-                    metrics_service.save_flow(flow_id, status="failed")
-                    # ======================================
                     return
 
-            # ========== 统计：记录生成脚本耗时 ==========
+            # ========== 度量 v2：创建测试脚本记录 ==========
             script_end_time = datetime.now()
-            metrics_service.record_script_duration(flow_id, script_start_time, script_end_time)
-            # ===========================================
+            script_duration = (script_end_time - script_start_time).total_seconds()
+            try:
+                # 查找生成的 test_*.py 文件
+                test_files = glob.glob(os.path.join(workspace, "test_*.py"))
+                if test_files:
+                    test_uuid = metrics_service_v2.create_script(
+                        script_path=test_files[0],
+                        script_type=ScriptType.TEST_SCRIPT,
+                        generation_duration=script_duration
+                    )
+                    self.logger.info(f"度量 v2: 创建测试脚本记录, uuid={test_uuid}, file={os.path.basename(test_files[0])}")
+            except Exception as metrics_error:
+                self.logger.warning(f"度量 v2: 创建测试脚本记录失败: {metrics_error}", exc_info=True)
+            # =========================================
 
             self.logger.info(f"Task {task_id}: 测试脚本生成完成，共处理 {message_count} 条消息")
             task_logger.write_log(task_id, f"✓ 测试脚本生成完成 (处理了 {message_count} 条消息)")
@@ -716,9 +812,6 @@ class ScriptGenerationService:
                 task_logger.write_log(task_id, "❌ 未找到部署的执行机IP，请先部署组网占用环境")
                 self._update_task_status(task_id, "failed", "ITC脚本执行")
                 task_logger.write_end_log(task_id, "failed")
-                # ========== 统计：保存失败状态 ==========
-                metrics_service.save_flow(flow_id, status="failed")
-                # ======================================
                 return
 
             task_logger.write_log(task_id, f"ℹ️ 执行机IP: {executorip}，账号:itc 密码:auto_123")
@@ -752,10 +845,16 @@ class ScriptGenerationService:
                     "result": None
                 }
 
-            # ========== 统计：记录ITC run耗时 ==========
+            # ========== 度量 v2：记录 ITC run 耗时到当前活跃脚本 ==========
             itc_run_end_time = datetime.now()
-            metrics_service.record_itc_run_duration(flow_id, itc_run_start_time, itc_run_end_time)
-            # ========================================
+            itc_run_duration = (itc_run_end_time - itc_run_start_time).total_seconds()
+            self._record_itc_run_metrics(
+                script_path=conftest_path if conftest_path else None,  # 优先使用 conftest.py，否则使用当前活跃脚本
+                duration=itc_run_duration,
+                return_code=result.get("return_code", "unknown"),
+                return_info=result.get("return_info")
+            )
+            # ===========================================================
 
             self.logger.info(f"Task {task_id}: ITC run 接口返回: {result}")
 
@@ -877,17 +976,12 @@ class ScriptGenerationService:
                     start_time=pipeline_start_time,
                     filename_prefix='test_'
                 )
-
-                if fingerprint_uuids:
-                    metrics_service.set_ai_fingerprints(flow_id, fingerprint_uuids)
-                    self.logger.info(f"Task {task_id}: 已为 {len(fingerprint_uuids)} 个test_文件添加AI指纹并存入flow")
             except Exception as fingerprint_err:
                 self.logger.warning(f"Task {task_id}: 为test_文件添加AI指纹失败: {str(fingerprint_err)}")
             # ===================================================================
 
-            # ========== 统计：保存流程统计数据 ==========
-            metrics_service.save_flow(flow_id, status="completed")
-            # ===========================================
+            # 写入任务结束标识
+            task_logger.write_end_log(task_id, "completed")
 
         # 最外面的try
         except asyncio.CancelledError:
@@ -896,13 +990,6 @@ class ScriptGenerationService:
             self._update_task_status(task_id, "cancelled")
             task_logger.write_log(task_id, "⚠️ 任务已被用户取消")
             task_logger.write_end_log(task_id, "cancelled")
-
-            # ========== 统计：保存取消状态 ==========
-            try:
-                metrics_service.save_flow(flow_id, status="cancelled")
-            except Exception as metrics_error:
-                self.logger.error(f"保存统计数据失败: {metrics_error}")
-            # ======================================
 
             raise  # 重新抛出 CancelledError，让 task_cancellation_manager 正确处理
 
@@ -915,13 +1002,6 @@ class ScriptGenerationService:
 
             # 写入任务结束标识
             task_logger.write_end_log(task_id, "failed")
-
-            # ========== 统计：保存失败状态 ==========
-            try:
-                metrics_service.save_flow(flow_id, status="failed")
-            except Exception as metrics_error:
-                self.logger.error(f"保存统计数据失败: {metrics_error}")
-            # ======================================
 
     # ==================== 获取任务日志 ====================
 
@@ -973,17 +1053,6 @@ class ScriptGenerationService:
         # 写入任务开始标识
         task_logger.write_start_log(task_id, "NETCONF 脚本生成任务")
         task_logger.write_log(task_id, f"YANG 文件: {', '.join(yang_files)}")
-        
-
-        # ========== 统计：获取或创建流程统计记录 ==========
-        from app.services.metrics_service import metrics_service
-        test_point = f"基于以下 YANG 文件生成 NETCONF 测试脚本: {', '.join(yang_files)}"
-        flow_id = metrics_service.get_or_create_current_flow(test_point, workspace)
-        # =================================================
-
-        # ========== 统计：记录 NETCONF 脚本生成开始时间 ==========
-        netconf_start_time = datetime.now()
-        # =====================================================
 
         try:
             # 更新任务状态为运行中
@@ -1003,16 +1072,12 @@ class ScriptGenerationService:
             # 2. 生成 NETCONF 测试脚本
             # 3. 运行测试脚本
             # 4. 解析结果并修复（如果需要）
+            test_point = f"基于以下 YANG 文件生成 NETCONF 测试脚本: {', '.join(yang_files)}"
             await execute_netconf_workflow(
                 task_id=task_id,
                 test_point=test_point,
                 workspace=workspace
             )
-
-            # ========== 统计：记录 NETCONF 脚本生成耗时 ==========
-            netconf_end_time = datetime.now()
-            metrics_service.record_script_duration(flow_id, netconf_start_time, netconf_end_time)
-            # ==================================================
 
             # ========== 为函数执行期间修改的 Python 文件添加 AI 指纹 ==========
             try:
@@ -1022,17 +1087,9 @@ class ScriptGenerationService:
                     exclude_filename_prefix='test_example',
                     exclude_dirs={'.venv', '.claude', '.git', '__pycache__', 'venv', 'env', '.pytest_cache', '.tox', 'dist', 'build', '.eggs', '*.egg-info', 'yang_files'}
                 )
-
-                if fingerprint_uuids:
-                    metrics_service.set_ai_fingerprints(flow_id, fingerprint_uuids)
-                    self.logger.info(f"Task {task_id}: 已为 {len(fingerprint_uuids)} 个文件添加AI指纹并存入flow")
             except Exception as fingerprint_err:
                 self.logger.warning(f"Task {task_id}: 为文件添加AI指纹失败: {str(fingerprint_err)}")
             # ===================================================================
-
-            # ========== 统计：保存完成状态 ==========
-            metrics_service.save_flow(flow_id, status="completed")
-            # ====================================
 
             task_logger.write_log(task_id, "\n===== NETCONF 脚本生成流程完成 =====")
             task_logger.write_end_log(task_id, "completed")
@@ -1045,13 +1102,6 @@ class ScriptGenerationService:
             task_logger.write_log(task_id, "⚠️ NETCONF 脚本生成任务已被用户取消")
             task_logger.write_end_log(task_id, "cancelled")
 
-            # ========== 统计：保存取消状态 ==========
-            try:
-                metrics_service.save_flow(flow_id, status="cancelled")
-            except Exception as metrics_error:
-                self.logger.error(f"保存统计数据失败: {metrics_error}")
-            # ======================================
-
             raise  # 重新抛出 CancelledError，让 task_cancellation_manager 正确处理
 
         except Exception as e:
@@ -1060,13 +1110,6 @@ class ScriptGenerationService:
 
             self._update_task_status(task_id, "failed")
             task_logger.write_log(task_id, f"❌ {error_msg}")
-
-            # ========== 统计：保存失败状态 ==========
-            try:
-                metrics_service.save_flow(flow_id, status="failed")
-            except Exception as metrics_error:
-                self.logger.error(f"保存统计数据失败: {metrics_error}")
-            # ====================================
 
             # 写入任务结束标识
             task_logger.write_end_log(task_id, "failed")

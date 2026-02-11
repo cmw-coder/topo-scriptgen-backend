@@ -13,7 +13,7 @@ class NewDeployRequest(BaseModel):
 
     支持的参数：
     - versionPath: 版本目录（兼容旧接口拼写，与 versionpath 二选一）
-    - versionpath: 版本目录（正确拼写，与 verisonPath 二选一）
+    - versionpath: 版本目录（正确拼写，与 versionPath 二选一）
     - deviceType: 设备类型
     """
     versionPath: Optional[str] = Field(None, description="版本目录（兼容旧接口拼写），可选，运行脚本需要的版本目录")
@@ -77,12 +77,10 @@ class ItcLogFileInfo(BaseModel):
     Result: Optional[str] = Field(None, description="测试结果（仅.pytestlog.json文件）")
     elapsed_time: Optional[str] = Field(None, description="耗时（仅.pytestlog.json文件）")
 
-
 class ItcLogStatistics(BaseModel):
     """ITC日志统计信息"""
     result_counts: Optional[Dict[str, int]] = Field(None, description="每个Result类型的个数统计")
     total_elapsed_time: Optional[str] = Field(None, description="所有elapsed_time的总和（原始格式）")
-
 
 class ItcLogFileListResponse(BaseModel):
     """ITC日志文件列表响应模型"""
@@ -92,18 +90,15 @@ class ItcLogFileListResponse(BaseModel):
     total_count: Optional[int] = Field(None, description="文件总数")
     statistics: Optional[ItcLogStatistics] = Field(None, description="统计信息（仅.pytestlog.json文件）")
 
-
 class ItcLogFileContentRequest(BaseModel):
     """ITC日志文件内容请求模型"""
     filename: str = Field(description="ITC日志文件名")
-
 
 class ItcLogFileContentResponse(BaseModel):
     """ITC日志文件内容响应模型"""
     status: str = Field(description="响应状态: ok/error")
     message: Optional[str] = Field(None, description="响应消息")
     data: Optional[dict] = Field(None, description="文件信息及内容")
-
 
 class AllPytestJsonFilesResponse(BaseModel):
     """所有 pytest.json 文件内容响应模型"""
@@ -112,17 +107,14 @@ class AllPytestJsonFilesResponse(BaseModel):
     data: Optional[List[Dict[str, Any]]] = Field(None, description="所有 pytest.json 文件内容的列表")
     total_count: Optional[int] = Field(None, description="文件总数")
 
-
 class ItcResultData(BaseModel):
     """ITC运行结果数据模型"""
     status: str = Field(description="运行状态: ok/error")
     message: Optional[str] = Field(None, description="结果消息或错误信息")
 
-
 class ItcResultResponse(BaseModel):
     """ITC运行结果响应模型"""
     data: ItcResultData = Field(description="ITC运行结果数据")
-
 
 __all__ = [
     "DeployRequest",
@@ -143,5 +135,6 @@ __all__ = [
     "ItcLogFileContentResponse",
     "AllPytestJsonFilesResponse",
     "ItcResultData",
-    "ItcResultResponse"
+    "ItcResultResponse",
+    "NewDeployRequest"
 ]

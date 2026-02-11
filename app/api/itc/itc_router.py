@@ -50,15 +50,6 @@ async def deploy_environment(request: NewDeployRequest):
         # 初始化 logger
         logger = logging.getLogger(__name__)
 
-        # ========== 统计：记录调用deploy时间 ==========
-        deploy_call_time = datetime.now()
-        try:
-            from app.services.metrics_service import metrics_service
-            metrics_service.record_deploy_call(deploy_call_time)
-        except Exception as metrics_error:
-            logger.warning(f"记录deploy调用时间失败: {metrics_error}")
-        # ==============================================
-
         # 获取用户名
         username = getpass.getuser()
 
@@ -113,8 +104,22 @@ async def deploy_environment(request: NewDeployRequest):
         itc_service.save_deploy_info(version_path, device_type)
         logger.info(f"已保存部署信息: version_path={version_path}, device_type={device_type}")
 
+        # ========== 度量 v2：开始部署 ==========
+        deploy_id = None
+        try:
+            from app.services.metrics_service_v2 import metrics_service_v2
+            deploy_id = metrics_service_v2.start_deploy(
+                topox_file=default_topox_file,
+                version_path=version_path,
+                device_type=device_type or "simware9cen"
+            )
+            logger.info(f"度量 v2: 开始部署, deploy_id={deploy_id}")
+        except Exception as metrics_error:
+            logger.warning(f"度量 v2: 开始部署失败: {metrics_error}")
+        # =====================================
+
         # 启动后台部署任务
-        itc_service.start_background_deploy(request, default_topox_file, unc_topofile)
+        itc_service.start_background_deploy(request, default_topox_file, unc_topofile, deploy_id)
 
         # 立即返回成功
         return BaseResponse(
@@ -424,7 +429,50 @@ async def run_script(request: RunSingleScriptRequest):
             executorip=executorip
         )
 
+        # ========== 度量 v2：记录ITC run开始时间 ==========
+        from datetime import datetime
+        itc_run_start_time = datetime.now()
+        # ==============================================
+
         result = await itc_service.run_script(itc_request)
+
+        # ========== 度量 v2：记录 ITC run 耗时到对应脚本 ==========
+        itc_run_end_time = datetime.now()
+        itc_run_duration = (itc_run_end_time - itc_run_start_time).total_seconds()
+        try:
+            from app.services.metrics_service_v2 import metrics_service_v2
+
+            # 确定脚本路径：如果传入了 script_path 且不为空，使用它；否则记录到 conftest.py 对应的度量记录
+            script_full_path = None
+            if script_path and script_path.strip():
+                # 传入的 script_path 可能是相对路径，需要构建完整路径
+                if os.path.isabs(script_path):
+                    script_full_path = script_path
+                else:
+                    script_full_path = os.path.join(work_dir, script_path)
+            else:
+                # 当 script_path 为空时，记录到 conftest.py 文件对应的度量记录数据中
+                conftest_source = os.path.join(work_dir, "conftest.py")
+                if os.path.exists(conftest_source):
+                    script_full_path = conftest_source
+                    logger.info(f"script_path 为空，将 ITC 运行时间记录到 conftest.py 对应的度量记录")
+                else:
+                    logger.info(f"script_path 为空且工作区中不存在 conftest.py，将记录到当前活跃脚本")
+
+            # 记录ITC run耗时（如果提供了 script_path，会自动找到或创建该脚本并设为活跃脚本）
+            success = metrics_service_v2.add_itc_run_duration(
+                duration=itc_run_duration,
+                return_code=result.get("return_code", "unknown"),
+                script_path=script_full_path
+            )
+            if success:
+                if script_full_path:
+                    logger.info(f"度量 v2: 记录 ITC run 耗时到脚本 {os.path.basename(script_full_path)}, duration={itc_run_duration}秒")
+                else:
+                    logger.info(f"度量 v2: 记录 ITC run 耗时到当前活跃脚本, duration={itc_run_duration}秒")
+        except Exception as metrics_error:
+            logger.warning(f"度量 v2: 记录 ITC run 失败: {metrics_error}")
+        # ======================================================
 
         if result.get("return_code") == "200":
             return BaseResponse(

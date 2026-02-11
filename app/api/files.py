@@ -1,3 +1,4 @@
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 import os
 import xml.etree.ElementTree as ET
@@ -91,6 +92,16 @@ async def delete_file_or_directory(
 ):
     """删除文件或目录"""
     try:
+
+
+        if Path(path).suffix == '.topox':
+            return FileOperationResponse(
+                path=path,
+                operation="delete",
+                success=False,
+                message=".topox 文件受保护，不允许删除"
+            )
+
         result = await file_service.delete_file(path)
 
         if result.success:

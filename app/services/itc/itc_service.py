@@ -616,13 +616,18 @@ class ITCService:
         version_path: Optional[str],
         device_type: str,
         executorip: Optional[str] = None,
-        device_list: Optional[List[Dict[str, Any]]] = None
+        device_list: Optional[List[Dict[str, Any]]] = None,
+        projectname: Optional[str] = None,
+        nvid: Optional[str] = None,
+        sessionId: Optional[str] = None
     ) -> None:
         """在用户目录中创建或更新 .aigc_tool/aigc.json 文件
 
         如果 aigc.json 已存在且包含 device_list，则更新以下属性：
         - exec_ip（全局执行机IP）
         - 设备的 executorip、host、port、type、title 属性
+        - nvid（NVIDIA项目ID）
+        - sessionId（会话ID）
 
         不修改设备的其他属性（如 name、userip 等其他自定义字段）
 
@@ -632,6 +637,9 @@ class ITCService:
             device_type: 设备类型
             executorip: 执行机IP（可选）
             device_list: 设备列表（可选）
+            projectname: 项目名称（可选，仅用于日志记录）
+            nvid: NVIDIA项目ID（可选）
+            sessionId: 会话ID（可选）
         """
         work_dir = settings.get_work_directory()
 
@@ -673,6 +681,14 @@ class ITCService:
             if device_list:
                 aigc_config["device_list"] = device_list
                 logger.info(f"添加设备列表: 共 {len(device_list)} 个设备")
+
+            # 添加项目相关配置（新增）
+            if nvid:
+                aigc_config["nvid"] = nvid
+                logger.info(f"添加NVIDIA项目ID: nvid={nvid}")
+            if sessionId:
+                aigc_config["sessionId"] = sessionId
+                logger.info(f"添加会话ID: sessionId={sessionId}")
 
         else:
             # 更新现有配置
@@ -771,6 +787,29 @@ class ITCService:
 
         logger.info(f"已创建/更新 aigc.json 文件: {aigc_json_path}")
         logger.info(f"aigc.json 内容:\n{json.dumps(aigc_config, indent=2, ensure_ascii=False)}")
+
+    def save_deploy_info(
+        self,
+        version_path: Optional[str],
+        device_type: str,
+        nvid: Optional[str] = None,
+        sessionId: Optional[str] = None
+    ) -> None:
+        """保存部署信息到 aigc.json（公共方法）
+
+        Args:
+            version_path: 版本路径
+            device_type: 设备类型
+            nvid: NVIDIA项目ID（可选）
+            sessionId: 会话ID（可选）
+        """
+        self._save_aigc_config(
+            topox_file="",  # 不更新 topox_file
+            version_path=version_path,
+            device_type=device_type,
+            nvid=nvid,
+            sessionId=sessionId
+        )
 
     def _convert_to_unc_path(self, local_dir: str) -> str:
         """将本地目录路径转换为 UNC 网络路径，供 ITC 服务器访问
@@ -927,7 +966,8 @@ class ITCService:
         self,
         request: NewDeployRequest,
         default_topox_file: str,
-        unc_topofile: str
+        unc_topofile: str,
+        deploy_id: Optional[str] = None
     ) -> None:
         """后台任务：执行实际的部署逻辑
 
@@ -935,6 +975,7 @@ class ITCService:
             request: 部署请求对象
             default_topox_file: 默认 topox 文件路径
             unc_topofile: UNC 网络路径
+            deploy_id: 度量 v2 部署ID
         """
         async def _deploy_task():
             try:
@@ -1049,13 +1090,18 @@ class ITCService:
                     settings.set_deploy_status("deployed")
                     settings.set_deploy_error_message(None)
 
-                    # ========== 统计：记录部署完成时间 ==========
+                    # ========== 度量 v2：完成部署 ==========
                     try:
-                        from app.services.metrics_service import metrics_service
-                        metrics_service.record_deploy_complete(datetime.now())
+                        from app.services.metrics_service_v2 import metrics_service_v2
+                        metrics_service_v2.complete_deploy(
+                            executor_ip=executorip,
+                            device_list=device_list,
+                            status="deployed"
+                        )
+                        logger.info("度量 v2: 部署完成")
                     except Exception as metrics_error:
-                        logger.warning(f"记录部署完成时间失败: {metrics_error}")
-                    # ===========================================
+                        logger.warning(f"度量 v2: 完成部署失败: {metrics_error}")
+                    # =====================================
 
                     logger.info("=" * 80)
                     logger.info("后台部署任务执行成功")
@@ -1065,6 +1111,15 @@ class ITCService:
                     error_msg = str(result.get('return_info', '未知错误'))
                     logger.error(f"部署失败 - return_code: {result.get('return_code')}")
                     logger.error(f"错误信息: {error_msg}")
+
+                    # ========== 度量 v2：部署失败 ==========
+                    try:
+                        from app.services.metrics_service_v2 import metrics_service_v2
+                        metrics_service_v2.fail_deploy(error_message=error_msg)
+                        logger.info("度量 v2: 部署失败")
+                    except Exception as metrics_error:
+                        logger.warning(f"度量 v2: 记录部署失败失败: {metrics_error}")
+                    # =====================================
 
                     # 清理 aigc.json 配置
                     logger.info("=" * 80)
@@ -1083,6 +1138,15 @@ class ITCService:
 
             except Exception as e:
                 logger.error(f"后台部署任务异常: {str(e)}", exc_info=True)
+
+                # ========== 度量 v2：部署异常 ==========
+                try:
+                    from app.services.metrics_service_v2 import metrics_service_v2
+                    metrics_service_v2.fail_deploy(error_message=f"部署异常: {str(e)}")
+                    logger.info("度量 v2: 部署异常")
+                except Exception as metrics_error:
+                    logger.warning(f"度量 v2: 记录部署异常失败: {metrics_error}")
+                # =====================================
 
                 # 清理 aigc.json 配置
                 logger.info("=" * 80)
@@ -1168,7 +1232,8 @@ class ITCService:
         self,
         request: NewDeployRequest,
         default_topox_file: str,
-        unc_topofile: str
+        unc_topofile: str,
+        deploy_id: Optional[str] = None
     ) -> None:
         """启动后台部署任务的同步方法
 
@@ -1176,15 +1241,16 @@ class ITCService:
             request: 部署请求对象
             default_topox_file: 默认 topox 文件路径
             unc_topofile: UNC 网络路径
+            deploy_id: 度量 v2 部署ID
         """
         # 在新线程中执行后台任务
         thread = threading.Thread(
             target=self._execute_deploy_background,
-            args=(request, default_topox_file, unc_topofile),
+            args=(request, default_topox_file, unc_topofile, deploy_id),
             daemon=True
         )
         thread.start()
-        logger.info(f"后台部署线程已启动: {thread.name}")
+        logger.info(f"后台部署线程已启动: {thread.name}, deploy_id={deploy_id}")
 
     def _copy_python_scripts_to_target_dir(self, run_new: bool = False) -> str:
         """将工作目录中的 Python 脚本拷贝到目标目录并授权
@@ -1852,7 +1918,9 @@ class ItcLogService:
         """
         try:
             # 验证文件名安全性，防止路径遍历攻击
-            if "/" in filename or "\\" in filename or ".." in filename:
+            # 使用更严格的校验：只允许字母、数字、点、下划线、连字符
+            import re
+            if not re.match(r'^[a-zA-Z0-9._\-]+$', filename):
                 logger.warning(f"检测到非法文件名: {filename}")
                 return False, "文件名包含非法字符", None
 
