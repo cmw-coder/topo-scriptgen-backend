@@ -309,9 +309,15 @@ class ScriptGenerationService:
             # 添加AI指纹到回写后的脚本
             try:
                 uuid = add_aifinger_hook.generate_unique_id()
-                success, _ = add_aifinger_hook.add_fingerprint_to_file(script_full_path, uuid)
+                success, is_update = add_aifinger_hook.add_fingerprint_to_file(script_full_path, uuid)
                 if success:
-                    self.logger.info(f"Task {task_id}: 已为回写脚本添加AI指纹: {uuid}")
+                    if is_update:
+                        self.logger.info(f"Task {task_id}: 已更新回写脚本的AI指纹（原指纹不合法）: {uuid}")
+                    else:
+                        self.logger.info(f"Task {task_id}: 已为回写脚本添加AI指纹: {uuid}")
+                else:
+                    # success=False 说明文件已有合法指纹被跳过
+                    self.logger.info(f"Task {task_id}: 回写脚本已存在合法的AI指纹，跳过添加")
             except Exception as fingerprint_err:
                 self.logger.warning(f"Task {task_id}: 添加AI指纹失败: {str(fingerprint_err)}")
 
@@ -732,9 +738,15 @@ class ScriptGenerationService:
                     # 添加AI指纹到 conftest.py
                     try:
                         uuid = add_aifinger_hook.generate_unique_id()
-                        success, _ = add_aifinger_hook.add_fingerprint_to_file(target_conftest, uuid)
+                        success, is_update = add_aifinger_hook.add_fingerprint_to_file(target_conftest, uuid)
                         if success:
-                            self.logger.info(f"Task {task_id}: 已为 conftest.py 添加AI指纹: {uuid}")
+                            if is_update:
+                                self.logger.info(f"Task {task_id}: 已更新 conftest.py 的AI指纹（原指纹不合法）: {uuid}")
+                            else:
+                                self.logger.info(f"Task {task_id}: 已为 conftest.py 添加AI指纹: {uuid}")
+                        else:
+                            # success=False 说明文件已有合法指纹被跳过
+                            self.logger.info(f"Task {task_id}: conftest.py 已存在合法的AI指纹，跳过添加")
                     except Exception as fingerprint_err:
                         self.logger.warning(f"Task {task_id}: 添加AI指纹失败: {str(fingerprint_err)}")
                 else:
