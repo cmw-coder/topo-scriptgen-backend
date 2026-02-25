@@ -218,7 +218,6 @@ async def prepare_dependencies(
 
         if result.get("return_code") == "200":
             task_logger.write_log(task_id, "✓ 依赖材料准备完成")
-            task_logger.write_end_log(task_id, "completed")
             logger.info(f"Task {task_id}: 依赖材料准备完成")
         else:
             task_logger.write_error(task_id, "依赖材料准备失败")
