@@ -322,6 +322,16 @@ class LOGPROCESS:
                 
                 if end_idx != -1:
                     content = line[end_idx + 1:]
+                    rest_content = ""
+                    if content.startswith("system-viewSystem View: return to User View with Ctrl+Z."):
+                        command_exec_res["system-view"] = "PASS"
+                        result_lines.append(command_exec_res)
+                        rest_content = content.replace("system-viewSystem View: return to User View with Ctrl+Z.", "")
+                    if rest_content.startswith('['):
+                        command_exec_res = {}
+                        end_flag = rest_content.find(']', 1)
+                        if end_flag != -1:
+                            content = line[end_flag + 1:]
                     if i < len(lines)-1:
                         next_line = lines[i + 1]
                         if next_line.endswith('^'):
@@ -943,7 +953,7 @@ class LOGPROCESS:
             step_name = f"step_{i}"
             if step_name in total_step_dict:
                 step_res = self.gen_command_info(total_step_dict[step_name])
-                print(step_res)
+                #print(step_res)
                 tmp_step_dict = {}
                 tmp_step_dict[step_name] = step_res
                 #print(tmp_step_dict)
