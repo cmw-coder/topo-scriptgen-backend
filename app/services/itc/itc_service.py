@@ -1674,19 +1674,33 @@ class ItcLogService:
             self._migration_attempted[username] = True
             self._migrate_old_log_files(username, itc_log_dir)
 
+        if itc_log_dir.exists() and itc_log_dir.is_dir():
+            logger.info(f"使用 ITC 日志目录: {itc_log_dir}")
+            return itc_log_dir
 
-        self._ensure_log_directory(itc_log_dir)
-      
-        return itc_log_dir
+        # 使用工作区 logs 目录
+        work_dir = settings.get_work_directory()
+        workspace_log_dir = Path(work_dir) / "logs"
 
-    def _ensure_log_directory(self, log_dir: Path) -> None:
+        # 确保工作区日志目录存在并设置权限（不影响主流程）
+        self._ensure_log_directory(workspace_log_dir)
+
+        logger.info(f"使用工作区 log 目录: {workspace_log_dir}")
+        return workspace_log_dir
+
+    def _ensure_log_directory(self, log_dir: Path) -> bool:
         """确保日志目录存在并设置正确的权限
 
         如果目录不存在则创建，并设置权限为 777 (rwxrwxrwx)
         允许任意用户读写执行。
 
+        注意：此函数不会抛出异常，权限设置失败时仅记录警告。
+
         Args:
             log_dir: 日志目录路径
+
+        Returns:
+            bool: 是否成功创建/设置目录权限
         """
         try:
             # 如果目录不存在，创建它（包括父目录）
@@ -1698,13 +1712,14 @@ class ItcLogService:
             # 0o777 表示: rwxrwxrwx (所有用户都有读、写、执行权限)
             log_dir.chmod(0o777)
             logger.debug(f"设置日志目录权限为 777: {log_dir}")
+            return True
 
         except PermissionError as e:
-            logger.error(f"权限不足，无法创建或修改日志目录 {log_dir}: {e}")
-            raise
+            logger.warning(f"权限不足，无法创建或修改日志目录 {log_dir}: {e}")
+            return False
         except OSError as e:
-            logger.error(f"创建日志目录失败 {log_dir}: {e}")
-            raise
+            logger.warning(f"创建日志目录失败 {log_dir}: {e}")
+            return False
 
     async def get_itc_log_files(self, username: Optional[str] = None) -> tuple[bool, str, Optional[List[Dict[str, Any]]], Optional[Dict[str, Any]]]:
         """获取指定用户的ITC日志文件列表
