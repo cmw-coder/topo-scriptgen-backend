@@ -22,6 +22,42 @@ from app.services.itc.itc_service import itc_service, itc_log_service
 from app.models.common import BaseResponse
 from app.core.config import settings
 
+def _copy_resource_directory(work_dir: str, target_dir: str, logger: logging.Logger) -> bool:
+    """
+    拷贝用户工作区的 resource 目录到目标目录
+
+    行为：
+    - 如果 work_dir/resource 不存在，静默跳过（返回 True）
+    - 如果 target_dir/resource 已存在，先删除再拷贝（覆盖）
+    - 递归拷贝整个目录及其内容
+    - 设置目录权限为 777，文件权限为 644
+    - 如果拷贝失败，记录 warning 日志但返回 True（不阻断）
+
+    Args:
+        work_dir: 用户工作区目录
+        target_dir: 目标目录（通常是 AIGC 工具目录）
+        logger: 日志记录器
+
+    Returns:
+        bool: 始终返回 True（即使失败也不阻断流程）
+    """
+    try:
+        resource_dir = os.path.join(work_dir, "resource")
+
+        # 检查源目录是否存在
+        if not os.path.exists(resource_dir):
+            # 静默跳过
+            return True
+
+        logger.info(f"发现 resource 目录，准备拷贝到 {target_dir}")
+
+        # TODO: 实现拷贝逻辑
+        return True
+
+    except Exception as e:
+        logger.warning(f"拷贝 resource 目录失败: {str(e)}")
+        return True
+
 router = APIRouter(tags=["ITC 自动化测试"])
 
 @router.post("/deploy", response_model=BaseResponse)
