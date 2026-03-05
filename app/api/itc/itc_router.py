@@ -491,6 +491,9 @@ async def run_script(request: RunSingleScriptRequest):
 
         copy_info = f"已删除 {len(deleted_files)} 个旧文件，已拷贝 {len(copied_files)} 个文件: {', '.join(copied_files)}"
 
+        # ========== 第3步：拷贝 resource 目录（如果存在）==========
+        _copy_resource_directory(work_dir, target_dir, logger)
+
         # 构造请求
         from app.models.itc.itc_models import RunScriptRequest
         itc_request = RunScriptRequest(
