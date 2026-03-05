@@ -70,7 +70,21 @@ def _copy_resource_directory(work_dir: str, target_dir: str, logger: logging.Log
             logger.warning(f"拷贝 resource 目录失败: {str(e)}")
             return True
 
-        # TODO: 实现权限设置
+        # 设置目录和文件权限
+        try:
+            set_permissions_recursive(target_resource_dir, 0o777)
+            # 单独设置文件权限为 644
+            for root, dirs, files in os.walk(target_resource_dir):
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    try:
+                        os.chmod(file_path, 0o644)
+                    except Exception as e:
+                        logger.warning(f"设置文件权限失败 {file_path}: {str(e)}")
+            logger.info(f"已设置 resource 目录权限")
+        except Exception as e:
+            logger.warning(f"设置 resource 目录权限失败: {str(e)}")
+
         return True
 
     except Exception as e:
