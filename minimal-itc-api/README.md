@@ -2,7 +2,7 @@
 
 一个最小化的 FastAPI 应用，用于 topox 文件部署和脚本执行。
 
-需求方 weiyongqiang  部署在149服务器本地执行
+需求方 weiyongqiang和 makunpeng  部署在149服务器本地执行
 
 
 
