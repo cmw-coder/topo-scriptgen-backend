@@ -62,7 +62,15 @@ def _copy_resource_directory(work_dir: str, target_dir: str, logger: logging.Log
                 logger.warning(f"删除旧 resource 目录失败: {str(e)}")
                 return True
 
-        # TODO: 实现拷贝逻辑
+        # 拷贝 resource 目录
+        try:
+            shutil.copytree(resource_dir, target_resource_dir)
+            logger.info(f"成功拷贝 resource 目录到 {target_resource_dir}")
+        except Exception as e:
+            logger.warning(f"拷贝 resource 目录失败: {str(e)}")
+            return True
+
+        # TODO: 实现权限设置
         return True
 
     except Exception as e:
