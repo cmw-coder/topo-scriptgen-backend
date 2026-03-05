@@ -22,6 +22,28 @@ from app.services.itc.itc_service import itc_service, itc_log_service
 from app.models.common import BaseResponse
 from app.core.config import settings
 
+
+def set_permissions_recursive(path, mode):
+    """递归设置目录及其所有内容的权限"""
+    try:
+        os.chmod(path, mode)
+        for root, dirs, files in os.walk(path):
+            for dir_name in dirs:
+                dir_path = os.path.join(root, dir_name)
+                try:
+                    os.chmod(dir_path, mode)
+                except Exception as e:
+                    logger.warning(f"设置目录权限失败 {dir_path}: {e}")
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                try:
+                    os.chmod(file_path, mode)
+                except Exception as e:
+                    logger.warning(f"设置文件权限失败 {file_path}: {e}")
+    except Exception as e:
+        logger.warning(f"设置根目录权限失败 {path}: {e}")
+
+
 def _copy_resource_directory(work_dir: str, target_dir: str, logger: logging.Logger) -> bool:
     """
     拷贝用户工作区的 resource 目录到目标目录
@@ -313,26 +335,6 @@ async def run_script(request: RunSingleScriptRequest):
         os.makedirs(target_dir, exist_ok=True)
 
         # 递归设置目录权限为 777
-        def set_permissions_recursive(path, mode):
-            """递归设置目录及其所有内容的权限"""
-            try:
-                os.chmod(path, mode)
-                for root, dirs, files in os.walk(path):
-                    for dir_name in dirs:
-                        dir_path = os.path.join(root, dir_name)
-                        try:
-                            os.chmod(dir_path, mode)
-                        except Exception as e:
-                            logger.warning(f"设置目录权限失败 {dir_path}: {e}")
-                    for file_name in files:
-                        file_path = os.path.join(root, file_name)
-                        try:
-                            os.chmod(file_path, mode)
-                        except Exception as e:
-                            logger.warning(f"设置文件权限失败 {file_path}: {e}")
-            except Exception as e:
-                logger.warning(f"设置根目录权限失败 {path}: {e}")
-
         set_permissions_recursive(target_dir, 0o777)
         logger.info(f"已设置 AIGC 工具目录权限: {target_dir}")
 
