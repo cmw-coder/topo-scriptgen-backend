@@ -8,6 +8,9 @@ Minimal ITC API - FastAPI 主应用
 - 每次部署创建新的临时目录（格式: temp_YYYYMMDD_HHMMSS）
 - 所有文件（topox 和脚本）都保存到当前临时目录
 - 自动设置临时目录权限为 777（任意用户可读写）
+- 智能临时目录管理：
+  * 上传包含 .topox 文件时：创建新临时目录
+  * 只上传脚本文件时：复用上一次部署的临时目录
 """
 
 import asyncio
@@ -288,13 +291,21 @@ def create_app() -> FastAPI:
         executor_ip: str = Form(..., description="执行机 IP 地址")
     ):
         """
-        批量上传脚本文件并执行
+        批量上传文件并运行脚本（支持脚本和 topox 文件）
 
-        1. 使用当前临时目录（如果不存在则创建）
-        2. 接收上传的脚本文件
-        3. 保存到临时目录并设置权限
-        4. 调用 ITC 运行接口
-        5. 返回运行结果
+        逻辑：
+        1. 如果上传的文件列表中包含 .topox 文件：
+           - 创建独立的临时目录（不影响全局临时目录状态）
+           - 保存所有文件（包括 topox 和脚本）
+           - 调用 ITC run_scripts 接口执行脚本
+        2. 如果只上传脚本文件（不含 .topox）：
+           - 使用上一次通过 /api/v1/upload-topox 部署的临时目录
+           - 保存脚本文件
+           - 调用 ITC run_scripts 接口执行脚本
+
+        注意：
+        - 只有 /api/v1/upload-topox 接口会更新全局临时目录
+        - upload-scripts 包含 topox 时创建的临时目录是独立的，不影响后续调用
         """
         logger = logging.getLogger(__name__)
 
@@ -306,49 +317,72 @@ def create_app() -> FastAPI:
                     detail="必须提供 executor_ip 参数"
                 )
 
-            # 获取或创建临时目录
-            temp_dir = settings.get_temp_dir()
-            temp_dir_name = settings.get_temp_dir_name()
-            logger.info(f"使用临时目录: {temp_dir}")
+            # 检查上传文件中是否包含 .topox 文件
+            has_topox = any(
+                f.filename and f.filename.endswith(".topox")
+                for f in script_files
+            )
 
-            # 保存所有脚本文件到临时目录
+            if has_topox:
+                # ========== 包含 topox 文件：创建独立的临时目录（不影响全局状态） ==========
+                logger.info("检测到 .topox 文件，将创建独立的临时目录")
+
+                # 创建独立的临时目录（不更新全局 _temp_dir_name）
+                temp_dir_name, temp_dir = settings.create_temp_dir_standalone()
+                logger.info(f"创建独立临时目录: {temp_dir}")
+
+            else:
+                # ========== 只包含脚本文件：使用上一次部署的临时目录 ==========
+                logger.info("未检测到 .topox 文件，将使用当前临时目录（由 upload-topox 设置）")
+
+                # 获取当前临时目录
+                temp_dir = settings.get_temp_dir()
+                temp_dir_name = settings.get_temp_dir_name()
+                logger.info(f"使用临时目录: {temp_dir}")
+
+            # 保存所有文件到临时目录
             saved_files = []
-            for script_file in script_files:
+            for upload_file in script_files:
                 # 验证文件扩展名
-                file_ext = Path(script_file.filename).suffix.lower()
-                if file_ext not in settings.ALLOWED_SCRIPT_EXTENSIONS:
-                    logger.warning(f"跳过不支持的文件类型: {script_file.filename}")
+                file_ext = Path(upload_file.filename).suffix.lower()
+                if file_ext not in settings.ALLOWED_TOPOX_EXTENSIONS and \
+                   file_ext not in settings.ALLOWED_SCRIPT_EXTENSIONS:
+                    logger.warning(f"跳过不支持的文件类型: {upload_file.filename}")
                     continue
 
                 # 保存文件到临时目录
-                file_path = temp_dir / script_file.filename
-                logger.info(f"保存脚本文件到临时目录: {file_path}")
+                file_path = temp_dir / upload_file.filename
+                logger.info(f"保存文件到临时目录: {file_path}")
 
                 with open(file_path, "wb") as f:
-                    content = await script_file.read()
+                    content = await upload_file.read()
                     f.write(content)
 
                 file_size = file_path.stat().st_size
                 saved_files.append({
-                    "filename": script_file.filename,
+                    "filename": upload_file.filename,
                     "size": file_size,
                     "path": str(file_path)
                 })
-                logger.info(f"文件已保存到临时目录: {script_file.filename} ({file_size} 字节)")
+                logger.info(f"文件已保存到临时目录: {upload_file.filename} ({file_size} 字节)")
 
             if not saved_files:
                 raise HTTPException(
                     status_code=400,
-                    detail="没有有效的脚本文件被上传"
+                    detail="没有有效的文件被上传"
                 )
 
             # 设置临时目录及其所有文件的权限为 777
             settings.set_directory_permissions(temp_dir)
 
-            logger.info(f"共保存 {len(saved_files)} 个脚本文件到临时目录: {temp_dir_name}")
+            logger.info(f"共保存 {len(saved_files)} 个文件到临时目录: {temp_dir_name}")
 
             # 获取临时目录的 UNC 路径
-            scripts_unc_path = settings.get_temp_dir_uname()
+            # 注意：standalone 临时目录需要手动构建 UNC 路径
+            if has_topox:
+                scripts_unc_path = f"{settings.BASE_UNC_DIR}/{temp_dir_name}"
+            else:
+                scripts_unc_path = settings.get_temp_dir_uname()
             logger.info(f"临时目录 UNC 路径: {scripts_unc_path}")
 
             # 调用 ITC 运行接口
@@ -367,7 +401,7 @@ def create_app() -> FastAPI:
                 logger.info(f"脚本执行成功: {return_info}")
                 return RunResponse(
                     status="ok",
-                    message=f"已保存 {len(saved_files)} 个脚本文件到临时目录 ({temp_dir_name}) 并执行成功",
+                    message=f"已保存 {len(saved_files)} 个文件到临时目录 ({temp_dir_name}) 并执行成功",
                     data={
                         # ITC 完整响应信息（透传）
                         "return_code": return_code,
@@ -401,10 +435,10 @@ def create_app() -> FastAPI:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"处理脚本上传时出错: {str(e)}", exc_info=True)
+            logger.error(f"处理文件上传时出错: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"处理脚本上传时出错: {str(e)}"
+                detail=f"处理文件上传时出错: {str(e)}"
             )
 
     @app.post("/api/v1/undeploy", response_model=BaseResponse, tags=["ITC API"])

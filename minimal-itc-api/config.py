@@ -133,5 +133,27 @@ class Settings:
         except Exception:
             pass
 
+    @classmethod
+    def create_temp_dir_standalone(cls) -> tuple[str, Path]:
+        """
+        创建独立的临时目录（不更新全局 _temp_dir_name）
+        用于 upload-scripts 接口中包含 topox 文件的场景
+
+        返回: (临时目录名称, 临时目录完整路径)
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_dir_name = f"temp_{timestamp}"
+
+        temp_dir = cls.get_base_dir() / temp_dir_name
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        # 设置权限为 777
+        try:
+            os.chmod(temp_dir, 0o777)
+        except Exception as e:
+            print(f"警告: 设置临时目录权限失败: {e}")
+
+        return temp_dir_name, temp_dir
+
 
 settings = Settings()
