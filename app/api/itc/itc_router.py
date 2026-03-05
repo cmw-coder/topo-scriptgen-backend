@@ -51,6 +51,17 @@ def _copy_resource_directory(work_dir: str, target_dir: str, logger: logging.Log
 
         logger.info(f"发现 resource 目录，准备拷贝到 {target_dir}")
 
+        target_resource_dir = os.path.join(target_dir, "resource")
+
+        # 如果目标位置已存在 resource 目录，先删除
+        if os.path.exists(target_resource_dir):
+            try:
+                shutil.rmtree(target_resource_dir)
+                logger.info(f"已删除目标目录中的旧 resource 目录")
+            except Exception as e:
+                logger.warning(f"删除旧 resource 目录失败: {str(e)}")
+                return True
+
         # TODO: 实现拷贝逻辑
         return True
 
