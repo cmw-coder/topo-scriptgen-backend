@@ -23,7 +23,7 @@ from app.models.common import BaseResponse
 from app.core.config import settings
 
 
-def set_permissions_recursive(path, mode):
+def set_permissions_recursive(path, mode, logger: logging.Logger):
     """递归设置目录及其所有内容的权限"""
     try:
         os.chmod(path, mode)
@@ -346,7 +346,7 @@ async def run_script(request: RunSingleScriptRequest):
         os.makedirs(target_dir, exist_ok=True)
 
         # 递归设置目录权限为 777
-        set_permissions_recursive(target_dir, 0o777)
+        set_permissions_recursive(target_dir, 0o777, logger)
         logger.info(f"已设置 AIGC 工具目录权限: {target_dir}")
 
         # 获取请求的脚本路径
