@@ -149,3 +149,4 @@ cython_debug/
 # Virtual environments (already covered above, but kept for clarity)
 /.venv/
 /venv/
+.worktrees/
