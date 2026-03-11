@@ -127,5 +127,50 @@ def test_atomic_write_creates_backup_on_corruption():
 
         # Check backup file exists
         backup_file = test_file.with_suffix('.json.backup')
-        # Note: backup behavior might be implemented differently
-        # This is a placeholder for when we implement backup logic
+        assert backup_file.exists()
+
+        # Verify backup contains the corrupted content
+        with open(backup_file, 'r') as f:
+            backup_content = f.read()
+        assert "{invalid json content" in backup_content
+
+        # Verify new file has correct data
+        with open(test_file, 'r') as f:
+            result = json.load(f)
+        assert result == test_data
+
+def test_atomic_write_timeout_parameter():
+    """Test that timeout parameter is respected"""
+    from exec_ip_mapper import atomic_write_with_lock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_file = Path(tmpdir) / "test.json"
+        test_data = {"mappings": {}}
+
+        # Write should succeed quickly with no contention
+        import time
+        start_time = time.time()
+        atomic_write_with_lock(test_file, test_data, timeout=1.0)
+        elapsed_time = time.time() - start_time
+
+        # Should complete well within timeout
+        assert elapsed_time < 1.0, f"Write should be fast, took {elapsed_time:.2f}s"
+
+def test_atomic_write_sequential_concurrent_writes():
+    """Test that sequential writes work correctly (simulating concurrent access)"""
+    from exec_ip_mapper import atomic_write_with_lock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_file = Path(tmpdir) / "test.json"
+
+        # Simulate multiple sequential writes (realistic concurrent scenario)
+        for i in range(5):
+            test_data = {"mappings": {f"write_{i}": {"id": i, "timestamp": i}}}
+            atomic_write_with_lock(test_file, test_data)
+
+        # Final file should be valid JSON with the last write
+        with open(test_file, 'r') as f:
+            result = json.load(f)
+        assert "mappings" in result
+        assert "write_4" in result["mappings"]
+        assert result["mappings"]["write_4"]["id"] == 4

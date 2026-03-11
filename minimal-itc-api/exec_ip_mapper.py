@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 from datetime import datetime
 from pathlib import Path
@@ -69,7 +70,7 @@ def _release_lock(file_handle):
         msvcrt.locking(file_handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 
-def atomic_write_with_lock(file_path: Path, data: dict, max_retries: int = 3):
+def atomic_write_with_lock(file_path: Path, data: dict, max_retries: int = 3, timeout: float = 5.0):
     """
     Atomic write with file locking
 
@@ -77,15 +78,36 @@ def atomic_write_with_lock(file_path: Path, data: dict, max_retries: int = 3):
         file_path: Path to the file to write
         data: Data to write (must be JSON serializable)
         max_retries: Maximum number of retry attempts
+        timeout: Maximum time in seconds to wait for lock acquisition
 
     Raises:
         IOError: If write fails after max retries
         TimeoutError: If lock acquisition times out
     """
     temp_path = file_path.with_suffix('.json.tmp')
+    start_time = time.time()
 
     for attempt in range(max_retries):
+        # Check if we've exceeded timeout
+        elapsed_time = time.time() - start_time
+        if elapsed_time >= timeout:
+            raise TimeoutError(f"Lock acquisition timeout after {elapsed_time:.2f}s (limit: {timeout}s)")
+
         try:
+            # Check if existing file is corrupted and needs backup (before opening temp file)
+            if file_path.exists():
+                try:
+                    with open(file_path, 'r') as f:
+                        json.load(f)
+                except (json.JSONDecodeError, ValueError):
+                    # File is corrupted, backup it
+                    backup_path = file_path.with_suffix('.json.backup')
+                    try:
+                        shutil.copy2(file_path, backup_path)
+                        logger.warning(f"Backed up corrupted mapping file to {backup_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to backup corrupted file: {e}")
+
             # Open temporary file
             with open(temp_path, 'w') as f:
                 # Acquire exclusive lock with non-blocking mode
@@ -93,9 +115,11 @@ def atomic_write_with_lock(file_path: Path, data: dict, max_retries: int = 3):
                     _acquire_lock(f, exclusive=True)
                 except (BlockingIOError, OSError):
                     if attempt < max_retries - 1:
-                        # Wait with exponential backoff
-                        wait_time = 2 ** attempt
-                        logger.warning(f"Lock acquisition failed, retry {attempt + 1}/{max_retries}, waiting {wait_time}s")
+                        # Calculate remaining time
+                        remaining_time = timeout - elapsed_time
+                        # Use exponential backoff but cap at remaining time
+                        wait_time = min(2 ** attempt, remaining_time)
+                        logger.warning(f"Lock acquisition failed, retry {attempt + 1}/{max_retries}, waiting {wait_time:.2f}s")
                         time.sleep(wait_time)
                         continue
                     else:
@@ -125,7 +149,10 @@ def atomic_write_with_lock(file_path: Path, data: dict, max_retries: int = 3):
         except Exception as e:
             # Clean up temp file
             if temp_path.exists():
-                temp_path.unlink(missing_ok=True)
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass  # Ignore cleanup errors
             logger.error(f"Failed to write mapping file (attempt {attempt + 1}/{max_retries}): {e}")
             if attempt == max_retries - 1:
                 raise
