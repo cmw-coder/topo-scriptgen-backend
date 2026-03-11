@@ -1,6 +1,6 @@
 # tests/test_exec_ip_mapper.py
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from exec_ip_mapper import ExecutorMapping
 
 def test_valid_mapping_creation():
@@ -11,7 +11,7 @@ def test_valid_mapping_creation():
         temp_dir_path="/opt/coder/statistics/build/aigc_tool/w14512/user1_temp_20260311_143022_a3f2b1c4",
         temp_dir_unc="//10.144.41.149/webide/aigc_tool/w14512/user1_temp_20260311_143022_a3f2b1c4",
         user="user1",
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
         deployed=True
     )
     assert mapping.executor_ip == "10.111.8.100"
@@ -25,7 +25,7 @@ def test_invalid_ip_format():
             temp_dir_name="temp_20260311_143022_a3f2b1c4",
             temp_dir_path="/opt/coder/statistics/build/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
             temp_dir_unc="//10.144.41.149/webide/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
-            created_at=datetime.utcnow().isoformat(),
+            created_at=datetime.now(timezone.utc).isoformat(),
             deployed=True
         )
 
@@ -38,7 +38,7 @@ def test_invalid_user_format():
             temp_dir_path="/opt/coder/statistics/build/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
             temp_dir_unc="//10.144.41.149/webide/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
             user="../malicious",  # Path traversal attempt
-            created_at=datetime.utcnow().isoformat(),
+            created_at=datetime.now(timezone.utc).isoformat(),
             deployed=True
         )
 
@@ -52,7 +52,7 @@ def test_user_too_long():
             temp_dir_path="/opt/coder/statistics/build/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
             temp_dir_unc="//10.144.41.149/webide/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
             user="a" * 33,  # 33 characters, max is 32
-            created_at=datetime.utcnow().isoformat(),
+            created_at=datetime.now(timezone.utc).isoformat(),
             deployed=True
         )
 
@@ -63,7 +63,7 @@ def test_optional_user_parameter():
         temp_dir_name="temp_20260311_143022_a3f2b1c4",
         temp_dir_path="/opt/coder/statistics/build/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
         temp_dir_unc="//10.144.41.149/webide/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
         deployed=True
     )
     assert mapping.user is None
