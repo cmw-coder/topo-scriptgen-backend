@@ -10,7 +10,7 @@ import os
 import re
 import shutil
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -55,7 +55,9 @@ def _acquire_lock(file_handle, exclusive=True):
     else:
         # Windows: use msvcrt.locking
         import msvcrt
-        lock_mode = msvcrt.LK_NBLCK if exclusive else msvcrt.LK_RLOCK
+        # On Windows, msvcrt doesn't support shared locks
+        # All locks are exclusive, so we always use LK_NBLCK
+        lock_mode = msvcrt.LK_NBLCK
         msvcrt.locking(file_handle.fileno(), lock_mode, 1)
 
 
@@ -211,3 +213,123 @@ class ExecutorMapping(BaseModel):
             }
         }
     }
+
+
+def save_mapping(
+    executor_ip: str,
+    temp_dir_name: str,
+    temp_dir_path: str,
+    temp_dir_unc: str,
+    user: Optional[str] = None
+) -> ExecutorMapping:
+    """Save a new executor IP mapping"""
+    # Validate temp directory exists
+    if not Path(temp_dir_path).exists():
+        raise ValueError(f"Temporary directory does not exist: {temp_dir_path}")
+
+    # Create mapping object
+    mapping = ExecutorMapping(
+        executor_ip=executor_ip,
+        temp_dir_name=temp_dir_name,
+        temp_dir_path=temp_dir_path,
+        temp_dir_unc=temp_dir_unc,
+        user=user,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        deployed=True
+    )
+
+    # Read existing data
+    file_path = get_mapping_file_path()
+    if file_path.exists():
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+        except json.JSONDecodeError:
+            logger.warning("Corrupted mapping file, creating new one")
+            backup_path = file_path.with_suffix('.json.backup')
+            file_path.replace(backup_path)
+            data = {"mappings": {}}
+    else:
+        data = {"mappings": {}}
+
+    # Add new mapping
+    data["mappings"][executor_ip] = mapping.model_dump()
+
+    # Write atomically
+    atomic_write_with_lock(file_path, data)
+
+    logger.info(f"Saved mapping: executor_ip={executor_ip}, temp_dir={temp_dir_name}, user={user}")
+
+    return mapping
+
+
+def get_mapping(executor_ip: str) -> Optional[ExecutorMapping]:
+    """Retrieve a mapping by executor IP"""
+    file_path = get_mapping_file_path()
+
+    if not file_path.exists():
+        logger.info(f"Mapping file not found: {file_path}")
+        return None
+
+    try:
+        with open(file_path, 'r') as f:
+            _acquire_lock(f, exclusive=False)
+            try:
+                data = json.load(f)
+            finally:
+                _release_lock(f)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Corrupted mapping file: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error reading mapping file: {e}")
+        return None
+
+    mapping_data = data.get("mappings", {}).get(executor_ip)
+
+    if mapping_data is None:
+        logger.info(f"Mapping not found for executor_ip: {executor_ip}")
+        return None
+
+    try:
+        mapping = ExecutorMapping(**mapping_data)
+        logger.info(f"Retrieved mapping: executor_ip={executor_ip}")
+        return mapping
+    except Exception as e:
+        logger.error(f"Invalid mapping data for executor_ip={executor_ip}: {e}")
+        return None
+
+
+def delete_mapping(executor_ip: str) -> bool:
+    """Delete a mapping by executor IP"""
+    file_path = get_mapping_file_path()
+
+    if not file_path.exists():
+        logger.info(f"Mapping file not found: {file_path}")
+        return False
+
+    try:
+        with open(file_path, 'r') as f:
+            _acquire_lock(f, exclusive=False)
+            try:
+                data = json.load(f)
+            finally:
+                _release_lock(f)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Corrupted mapping file: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Error reading mapping file: {e}")
+        return False
+
+    if executor_ip not in data.get("mappings", {}):
+        logger.info(f"Mapping not found for executor_ip: {executor_ip}")
+        return False
+
+    del data["mappings"][executor_ip]
+
+    atomic_write_with_lock(file_path, data)
+
+    logger.info(f"Deleted mapping: executor_ip={executor_ip}")
+
+    return True

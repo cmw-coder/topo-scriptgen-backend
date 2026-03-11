@@ -174,3 +174,225 @@ def test_atomic_write_sequential_concurrent_writes():
         assert "mappings" in result
         assert "write_4" in result["mappings"]
         assert result["mappings"]["write_4"]["id"] == 4
+
+def test_save_mapping():
+    """Test saving a new mapping"""
+    import exec_ip_mapper
+    from exec_ip_mapper import save_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            # Create temp directory first
+            temp_dir = Path(tmpdir) / "user1_temp_20260311_143022_a3f2b1c4"
+            temp_dir.mkdir()
+
+            save_mapping(
+                executor_ip="10.111.8.100",
+                temp_dir_name="user1_temp_20260311_143022_a3f2b1c4",
+                temp_dir_path=str(temp_dir),
+                temp_dir_unc="//10.144.41.149/webide/aigc_tool/w14512/user1_temp_20260311_143022_a3f2b1c4",
+                user="user1"
+            )
+
+            file_path = exec_ip_mapper.get_mapping_file_path()
+            assert file_path.exists()
+
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+
+            assert "10.111.8.100" in data["mappings"]
+            assert data["mappings"]["10.111.8.100"]["user"] == "user1"
+
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
+
+def test_save_mapping_without_user():
+    """Test saving a mapping without user parameter"""
+    import exec_ip_mapper
+    from exec_ip_mapper import save_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            # Create temp directory first
+            temp_dir = Path(tmpdir) / "temp_20260311_143022_a3f2b1c4"
+            temp_dir.mkdir()
+
+            save_mapping(
+                executor_ip="10.111.8.101",
+                temp_dir_name="temp_20260311_143022_a3f2b1c4",
+                temp_dir_path=str(temp_dir),
+                temp_dir_unc="//10.144.41.149/webide/aigc_tool/w14512/temp_20260311_143022_a3f2b1c4",
+                user=None
+            )
+
+            file_path = exec_ip_mapper.get_mapping_file_path()
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+
+            assert data["mappings"]["10.111.8.101"]["user"] is None
+
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
+
+def test_save_mapping_nonexistent_temp_dir():
+    """Test that saving with non-existent temp dir raises error"""
+    import exec_ip_mapper
+    from exec_ip_mapper import save_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            with pytest.raises(ValueError, match="Temporary directory does not exist"):
+                save_mapping(
+                    executor_ip="10.111.8.102",
+                    temp_dir_name="nonexistent_temp",
+                    temp_dir_path=str(Path(tmpdir) / "nonexistent_temp"),
+                    temp_dir_unc="//unc/path/nonexistent_temp",
+                    user="user1"
+                )
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
+
+def test_get_mapping():
+    """Test retrieving an existing mapping"""
+    import exec_ip_mapper
+    from exec_ip_mapper import get_mapping, save_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            # Create temp directory first
+            temp_dir = Path(tmpdir) / "user1_temp_20260311_143022_a3f2b1c4"
+            temp_dir.mkdir()
+
+            save_mapping(
+                executor_ip="10.111.8.100",
+                temp_dir_name="user1_temp_20260311_143022_a3f2b1c4",
+                temp_dir_path=str(temp_dir),
+                temp_dir_unc="//unc/path/user1_temp_20260311_143022_a3f2b1c4",
+                user="user1"
+            )
+
+            mapping = get_mapping("10.111.8.100")
+            assert mapping is not None
+            assert mapping.executor_ip == "10.111.8.100"
+            assert mapping.user == "user1"
+
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
+
+def test_get_mapping_not_found():
+    """Test retrieving a non-existent mapping"""
+    import exec_ip_mapper
+    from exec_ip_mapper import get_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            mapping = get_mapping("10.111.8.999")
+            assert mapping is None
+
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
+
+def test_get_mapping_corrupted_file():
+    """Test retrieving from corrupted file returns None"""
+    import exec_ip_mapper
+    from exec_ip_mapper import get_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            # Create corrupted file
+            file_path = exec_ip_mapper.get_mapping_file_path()
+            with open(file_path, 'w') as f:
+                f.write("{invalid json content")
+
+            mapping = get_mapping("10.111.8.100")
+            assert mapping is None
+
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
+
+def test_delete_mapping():
+    """Test deleting an existing mapping"""
+    import exec_ip_mapper
+    from exec_ip_mapper import delete_mapping, save_mapping, get_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            # Create temp directory first
+            temp_dir = Path(tmpdir) / "user1_temp_20260311_143022_a3f2b1c4"
+            temp_dir.mkdir()
+
+            save_mapping(
+                executor_ip="10.111.8.100",
+                temp_dir_name="user1_temp_20260311_143022_a3f2b1c4",
+                temp_dir_path=str(temp_dir),
+                temp_dir_unc="//unc/path/user1_temp_20260311_143022_a3f2b1c4",
+                user="user1"
+            )
+
+            assert get_mapping("10.111.8.100") is not None
+
+            result = delete_mapping("10.111.8.100")
+            assert result is True
+
+            assert get_mapping("10.111.8.100") is None
+
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
+
+def test_delete_mapping_not_found():
+    """Test deleting a non-existent mapping returns False"""
+    import exec_ip_mapper
+    from exec_ip_mapper import delete_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            result = delete_mapping("10.111.8.999")
+            assert result is False
+
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
+
+def test_delete_mapping_corrupted_file():
+    """Test deleting from corrupted file returns False"""
+    import exec_ip_mapper
+    from exec_ip_mapper import delete_mapping
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        original_get_path = exec_ip_mapper.get_mapping_file_path
+        exec_ip_mapper.get_mapping_file_path = lambda: Path(tmpdir) / "exec_ip.json"
+
+        try:
+            # Create corrupted file
+            file_path = exec_ip_mapper.get_mapping_file_path()
+            with open(file_path, 'w') as f:
+                f.write("{invalid json content")
+
+            result = delete_mapping("10.111.8.100")
+            assert result is False
+
+        finally:
+            exec_ip_mapper.get_mapping_file_path = original_get_path
