@@ -4,6 +4,7 @@
 """
 
 import os
+import uuid
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -53,14 +54,23 @@ class Settings:
         return base_path
 
     @classmethod
-    def create_temp_dir(cls) -> str:
+    def create_temp_dir(cls, user: Optional[str] = None) -> str:
         """
         创建新的临时目录
-        格式: temp_YYYYMMDD_HHMMSS
-        返回: 临时目录名称
+
+        Args:
+            user: 可选的用户标识，用作目录前缀
+
+        返回:
+            临时目录名称
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        cls._temp_dir_name = f"temp_{timestamp}"
+        uuid_suffix = uuid.uuid4().hex[:8]  # UUID 的前 8 个字符
+
+        if user:
+            cls._temp_dir_name = f"{user}_temp_{timestamp}_{uuid_suffix}"
+        else:
+            cls._temp_dir_name = f"temp_{timestamp}_{uuid_suffix}"
 
         temp_dir = cls.get_base_dir() / cls._temp_dir_name
         temp_dir.mkdir(parents=True, exist_ok=True)
@@ -134,15 +144,24 @@ class Settings:
             pass
 
     @classmethod
-    def create_temp_dir_standalone(cls) -> tuple[str, Path]:
+    def create_temp_dir_standalone(cls, user: Optional[str] = None) -> tuple[str, Path]:
         """
         创建独立的临时目录（不更新全局 _temp_dir_name）
         用于 upload-scripts 接口中包含 topox 文件的场景
 
-        返回: (临时目录名称, 临时目录完整路径)
+        Args:
+            user: 可选的用户标识，用作目录前缀
+
+        返回:
+            (临时目录名称, 临时目录完整路径)
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        temp_dir_name = f"temp_{timestamp}"
+        uuid_suffix = uuid.uuid4().hex[:8]  # UUID 的前 8 个字符
+
+        if user:
+            temp_dir_name = f"{user}_temp_{timestamp}_{uuid_suffix}"
+        else:
+            temp_dir_name = f"temp_{timestamp}_{uuid_suffix}"
 
         temp_dir = cls.get_base_dir() / temp_dir_name
         temp_dir.mkdir(parents=True, exist_ok=True)
