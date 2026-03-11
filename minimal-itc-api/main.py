@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse
 from config import settings
 from models import BaseResponse, DeployResponse, RunResponse, HealthResponse
 from itc_client import create_itc_client
+from exec_ip_mapper import save_mapping, get_mapping, delete_mapping
 
 
 # ========== 配置日志 ==========
@@ -179,7 +180,8 @@ def create_app() -> FastAPI:
     async def upload_topox_and_deploy(
         topox_file: UploadFile = File(..., description="Topox 文件"),
         version_path: str = Form(None, description="版本目录路径"),
-        device_type: str = Form("simware9cen", description="设备类型")
+        device_type: str = Form("simware9cen", description="设备类型"),
+        user: str = Form(None, description="用户标识")
     ):
         """
         上传 topox 文件并部署组网
@@ -201,7 +203,7 @@ def create_app() -> FastAPI:
                 )
 
             # 创建新的临时目录（每次部署刷新）
-            temp_dir_name = settings.create_temp_dir()
+            temp_dir_name = settings.create_temp_dir(user=user)
             temp_dir = settings.get_temp_dir()
             logger.info(f"创建新临时目录: {temp_dir}")
 
@@ -247,6 +249,26 @@ def create_app() -> FastAPI:
 
             if return_code == "200":
                 logger.info(f"部署成功: {return_info}")
+
+                # Extract executor_ip from ITC response
+                executor_ip = None
+                if result and isinstance(result, dict):
+                    executor_ip = result.get("executorip")
+
+                # Save mapping if executor_ip is available
+                if executor_ip:
+                    try:
+                        save_mapping(
+                            executor_ip=executor_ip,
+                            temp_dir_name=temp_dir_name,
+                            temp_dir_path=str(temp_dir),
+                            temp_dir_unc=settings.get_temp_dir_uname(),
+                            user=user
+                        )
+                        logger.info(f"Saved mapping: executor_ip={executor_ip}, temp_dir={temp_dir_name}, user={user}")
+                    except Exception as e:
+                        logger.error(f"Failed to save mapping: {e}")
+
                 return DeployResponse(
                     status="ok",
                     message=f"Topox 文件已保存到临时目录 ({temp_dir_name}) 并部署成功",
@@ -258,7 +280,10 @@ def create_app() -> FastAPI:
                         # 临时目录信息
                         "temp_dir_name": temp_dir_name,
                         "temp_dir_path": str(temp_dir),
-                        "temp_dir_unc": settings.get_temp_dir_uname()
+                        "temp_dir_unc": settings.get_temp_dir_uname(),
+                        # 映射信息
+                        "executor_ip": executor_ip,
+                        "user": user
                     }
                 )
             else:
@@ -332,13 +357,44 @@ def create_app() -> FastAPI:
                 logger.info(f"创建独立临时目录: {temp_dir}")
 
             else:
-                # ========== 只包含脚本文件：使用上一次部署的临时目录 ==========
-                logger.info("未检测到 .topox 文件，将使用当前临时目录（由 upload-topox 设置）")
+                # ========== 只包含脚本文件：查询映射文件获取临时目录 ==========
+                logger.info("未检测到 .topox 文件，将查询映射文件获取临时目录")
 
-                # 获取当前临时目录
-                temp_dir = settings.get_temp_dir()
-                temp_dir_name = settings.get_temp_dir_name()
-                logger.info(f"使用临时目录: {temp_dir}")
+                try:
+                    # Query mapping using executor_ip
+                    mapping = get_mapping(executor_ip)
+
+                    if mapping is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"未找到 executor_ip {executor_ip} 对应的临时目录，请先调用 upload-topox 进行部署"
+                        )
+
+                    # Validate temp directory still exists
+                    if not Path(mapping.temp_dir_path).exists():
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"临时目录 {mapping.temp_dir_name} 不存在，请重新部署"
+                        )
+
+                    # Use mapped temp directory
+                    temp_dir = Path(mapping.temp_dir_path)
+                    temp_dir_name = mapping.temp_dir_name
+                    logger.info(f"使用映射的临时目录: {temp_dir}")
+
+                except FileNotFoundError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="映射文件不存在，请先调用 upload-topox 进行部署"
+                    )
+                except Exception as e:
+                    if isinstance(e, HTTPException):
+                        raise
+                    logger.error(f"读取映射文件时出错: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="映射文件损坏，请联系管理员"
+                    )
 
             # 保存所有文件到临时目录
             saved_files = []
@@ -382,7 +438,9 @@ def create_app() -> FastAPI:
             if has_topox:
                 scripts_unc_path = f"{settings.BASE_UNC_DIR}/{temp_dir_name}"
             else:
-                scripts_unc_path = settings.get_temp_dir_uname()
+                # Use mapped temp_dir_unc from mapping
+                mapping = get_mapping(executor_ip)
+                scripts_unc_path = mapping.temp_dir_unc if mapping else settings.get_temp_dir_uname()
             logger.info(f"临时目录 UNC 路径: {scripts_unc_path}")
 
             # 调用 ITC 运行接口
@@ -469,6 +527,17 @@ def create_app() -> FastAPI:
             undeploy_result = await itc_client.undeploy(
                 executor_ip=executor_ip
             )
+
+            # Delete mapping regardless of ITC result
+            try:
+                deleted = delete_mapping(executor_ip)
+                if deleted:
+                    logger.info(f"Deleted mapping: executor_ip={executor_ip}")
+                else:
+                    logger.info(f"No mapping found for executor_ip: {executor_ip}")
+            except Exception as e:
+                logger.error(f"Failed to delete mapping: {e}")
+                # Mapping deletion failure doesn't affect response
 
             # 检查卸载结果
             return_code = undeploy_result.get("return_code")
