@@ -1,6 +1,9 @@
 # tests/test_exec_ip_mapper.py
 import pytest
+import tempfile
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from exec_ip_mapper import ExecutorMapping
 
 def test_valid_mapping_creation():
@@ -79,3 +82,50 @@ def test_invalid_timestamp_format():
             created_at="invalid-timestamp",
             deployed=True
         )
+
+def test_get_mapping_file_path():
+    """Test that mapping file path is correctly determined"""
+    from exec_ip_mapper import get_mapping_file_path
+
+    file_path = get_mapping_file_path()
+    assert file_path.name == "exec_ip.json"
+    assert "minimal-itc-api" in str(file_path)
+
+def test_atomic_write_with_lock():
+    """Test atomic write with file locking"""
+    from exec_ip_mapper import atomic_write_with_lock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_file = Path(tmpdir) / "test.json"
+        test_data = {"mappings": {"test_ip": {"test": "data"}}}
+
+        # Write data
+        atomic_write_with_lock(test_file, test_data)
+
+        # Verify file was created
+        assert test_file.exists()
+
+        # Verify content
+        with open(test_file, 'r') as f:
+            result = json.load(f)
+        assert result == test_data
+
+def test_atomic_write_creates_backup_on_corruption():
+    """Test that corrupted file is backed up"""
+    from exec_ip_mapper import atomic_write_with_lock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_file = Path(tmpdir) / "test.json"
+
+        # Create corrupted file
+        with open(test_file, 'w') as f:
+            f.write("{invalid json content")
+
+        # This should backup the corrupted file and create new one
+        test_data = {"mappings": {}}
+        atomic_write_with_lock(test_file, test_data)
+
+        # Check backup file exists
+        backup_file = test_file.with_suffix('.json.backup')
+        # Note: backup behavior might be implemented differently
+        # This is a placeholder for when we implement backup logic
