@@ -252,8 +252,8 @@ def create_app() -> FastAPI:
 
                 # Extract executor_ip from ITC response
                 executor_ip = None
-                if result and isinstance(result, dict):
-                    executor_ip = result.get("executorip")
+                if return_info and isinstance(return_info, dict):
+                    executor_ip = return_info.get("executorip")
 
                 # Save mapping if executor_ip is available
                 if executor_ip:
@@ -456,7 +456,6 @@ def create_app() -> FastAPI:
             result = run_result.get("result")
 
             if return_code == "200":
-                logger.info(f"脚本执行成功: {return_info}")
                 return RunResponse(
                     status="ok",
                     message=f"已保存 {len(saved_files)} 个文件到临时目录 ({temp_dir_name}) 并执行成功",
@@ -474,7 +473,7 @@ def create_app() -> FastAPI:
                     }
                 )
             else:
-                logger.error(f"脚本执行失败: {return_info}")
+                logger.error(f"脚本执行失败")
                 return RunResponse(
                     status="error",
                     message=f"脚本执行失败: {return_info}",

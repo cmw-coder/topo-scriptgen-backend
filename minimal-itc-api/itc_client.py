@@ -63,7 +63,7 @@ class ITCClient:
                 response = await client.post(url, json=data)
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"ITC newdeploy 响应: {result}")
+                logger.info(f"ITC newdeploy 响应: return_code={result.get('return_code')}, result={result.get('result')}")
                 return result
 
         except httpx.HTTPStatusError as e:
@@ -112,7 +112,7 @@ class ITCClient:
                 response = await client.post(url, json=data)
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"ITC 运行响应: {result}")
+                logger.info(f"ITC 运行响应: return_code={result.get('return_code')}, result={result.get('result')}")
                 return result
 
         except httpx.HTTPStatusError as e:
@@ -158,7 +158,7 @@ class ITCClient:
                 response = await client.post(url, json=data)
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"ITC 卸载响应: {result}")
+                logger.info(f"ITC 卸载响应: return_code={result.get('return_code')}, result={result.get('result')}")
                 return result
 
         except httpx.HTTPStatusError as e:
