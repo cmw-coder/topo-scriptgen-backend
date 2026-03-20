@@ -87,7 +87,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
             settings.set_deploy_error_message("通过上传 default.topox")
             logger.info("已重置部署状态为 not_deployed，原因：通过上传 default.topox")
 
-            # 异步卸载
+            # 异步卸载（不等待完成）
             self._async_undeploy_if_needed()
 
             elapsed = time.time() - start_time

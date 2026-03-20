@@ -57,7 +57,14 @@ async def read_file_or_directory(
 
 @router.post("/write", response_model=BaseResponse)
 async def write_file(request: FileOperationRequest):
-    """写入文件内容"""
+    """写入文件内容
+
+    特殊功能: 当写入文件名为 default.topox 时，会自动：
+    - 解析 XML 内容并更新 aigc.json
+    - 重置部署状态为 not_deployed
+    - 异步调用卸载组网接口（如果存在 executorip）
+
+    这些操作在后台执行，不会阻塞文件写入响应。"""
     try:
         if not request.content:
             raise HTTPException(status_code=400, detail="文件内容不能为空")
