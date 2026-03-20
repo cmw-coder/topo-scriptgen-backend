@@ -13,6 +13,7 @@ from app.core.path_manager import path_manager
 from app.core.config import settings
 from app.models.common import DirectoryItem, FileOperationRequest, FileOperationResponse
 from app.services.topo_service import topo_service
+from app.services.itc.itc_service import itc_service
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +99,124 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
             # 不抛出异常，允许文件保存成功
 
     async def _async_undeploy_if_needed(self) -> None:
-        """异步卸载（预留方法）"""
-        logger.debug("_async_undeploy_if_called 方法被调用")
+        """如果存在 executorip，异步调用卸载组网接口
+
+        特性：
+        - 任务生命周期管理：追踪所有创建的任务
+        - 并发控制：使用信号量限制并发数量
+        - 任务替换：取消之前的卸载任务，创建新任务
+        """
+        try:
+            # Use self.settings instead of importing from app.core.config
+            # This allows mocking in tests
+
+            # 检查配置是否启用异步卸载
+            if not getattr(self, 'settings', None):
+                logger.info("No settings object available, skip async undeploy")
+                return
+
+            if not self.settings.DEFAULT_TOPOX_ASYNC_UNDEPLOY:
+                logger.info("异步卸载功能未启用，跳过")
+                return
+
+            executorip = self.settings.get_deploy_executor_ip()
+
+            if not executorip:
+                logger.info("不存在 executorip，跳过卸载组网")
+                return
+
+            # 如果已有卸载任务在执行，取消它
+            if self._current_undeploy_task and not self._current_undeploy_task.done():
+                logger.info("取消之前的卸载任务")
+                self._current_undeploy_task.cancel()
+
+            logger.info(f"检测到 executorip: {executorip}，创建异步卸载任务")
+
+            # 创建新的卸载任务
+            self._current_undeploy_task = asyncio.create_task(
+                self._execute_undeploy_with_semaphore(executorip)
+            )
+
+            # 添加到任务追踪集合
+            self._undeploy_tasks.add(self._current_undeploy_task)
+            logger.info(f"任务已添加到集合，当前任务数: {len(self._undeploy_tasks)}")
+
+            # 任务完成时自动从集合中移除
+            self._current_undeploy_task.add_done_callback(self._undeploy_tasks.discard)
+
+        except Exception as e:
+            logger.error(f"创建异步卸载任务失败: {str(e)}", exc_info=True)
+
+    async def _execute_undeploy_with_semaphore(self, executorip: str) -> None:
+        """执行卸载操作（带并发控制）
+
+        Args:
+            executorip: 执行器 IP 地址
+        """
+        async with self._undeploy_semaphore:
+            await self._execute_undeploy(executorip)
+
+    async def _execute_undeploy(self, executorip: str) -> None:
+        """执行卸载操作（在后台任务中运行）
+
+        Args:
+            executorip: 执行器 IP 地址
+        """
+        import time
+        start_time = time.time()
+
+        try:
+            logger.info(f"开始异步卸载组网，executorip: {executorip}")
+
+            # Use self.itc_service instead of global itc_service to allow mocking
+            if not hasattr(self, 'itc_service'):
+                logger.error("No itc_service available, skip undeploy")
+                return
+
+            from app.models.itc.itc_models import ExecutorRequest
+            request = ExecutorRequest(executorip=executorip)
+
+            # 使用超时控制
+            if hasattr(self, 'settings'):
+                timeout = self.settings.DEFAULT_TOPOX_UNDEPLOY_TIMEOUT
+            else:
+                timeout = 30  # Default timeout
+
+            result = await asyncio.wait_for(
+                self.itc_service.undeploy_environment(request),
+                timeout=timeout
+            )
+
+            elapsed = time.time() - start_time
+
+            if result.return_code == "200":
+                logger.info(f"异步卸载成功: {executorip}，耗时 {elapsed:.2f} 秒")
+            else:
+                logger.warning(f"异步卸载失败: {result.return_info}，耗时 {elapsed:.2f} 秒")
+
+        except asyncio.TimeoutError:
+            elapsed = time.time() - start_time
+            logger.error(f"异步卸载超时（{timeout}秒），耗时 {elapsed:.2f} 秒")
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"异步卸载异常: {str(e)}，耗时 {elapsed:.2f} 秒", exc_info=True)
+
+    async def wait_for_undeploy_tasks(self, timeout: float = 5.0) -> None:
+        """等待所有卸载任务完成（用于应用关闭时）
+
+        Args:
+            timeout: 等待超时时间（秒）
+        """
+        if self._undeploy_tasks:
+            logger.info(f"等待 {len(self._undeploy_tasks)} 个卸载任务完成...")
+            tasks = list(self._undeploy_tasks)
+            done, pending = await asyncio.wait(tasks, timeout=timeout)
+
+            if pending:
+                logger.warning(f"有 {len(pending)} 个卸载任务未完成，强制退出")
+            else:
+                logger.info("所有卸载任务已完成")
 
     async def read_directory(self, directory_path: str) -> FileOperationResponse:
         """读取目录内容"""

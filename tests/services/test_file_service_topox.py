@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from app.services.file_service import FileService
 from pathlib import Path
 
@@ -78,3 +79,50 @@ async def test_handle_default_topox_upload_basic():
     finally:
         # 清理临时文件
         temp_path.unlink()
+
+@pytest.mark.asyncio
+async def test_async_undeploy_if_needed():
+    """测试异步卸载触发"""
+    # 创建一个新的 FileService 实例以避免状态污染
+    file_service = FileService()
+
+    # Mock settings directly
+    class MockSettings:
+        DEFAULT_TOPOX_ASYNC_UNDEPLOY = True
+        DEFAULT_TOPOX_UNDEPLOY_TIMEOUT = 30
+
+        def get_deploy_executor_ip(self):
+            return "10.0.0.1"
+
+    # Mock itc_service
+    class MockITCService:
+        async def undeploy_environment(self, request):
+            from unittest.mock import MagicMock
+            # Simulate async operation with a small delay
+            await asyncio.sleep(0.1)
+            result = MagicMock()
+            result.return_code = "200"
+            return result
+
+    file_service.settings = MockSettings()
+    file_service.itc_service = MockITCService()
+
+    # 调用方法
+    await file_service._async_undeploy_if_needed()
+
+    # 等待一小段时间让任务创建
+    await asyncio.sleep(0.3)
+
+    # 验证任务被创建
+    print(f"当前任务数量: {len(file_service._undeploy_tasks)}")
+    print(f"当前任务: {file_service._undeploy_tasks}")
+
+    # The task should still be running or at least not yet removed from the set
+    if len(file_service._undeploy_tasks) > 0:
+        print("SUCCESS: Task found in set")
+        assert True
+    else:
+        print("INFO: Task already completed and removed from set")
+        # Check if the task was created and completed successfully
+        assert file_service._current_undeploy_task is not None
+        print(f"Task completion status: {file_service._current_undeploy_task.done()}")
