@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, TypedDict
@@ -235,6 +236,14 @@ async def get_physical_devices() -> JSONResponse:
                     aigc_config = json.load(f)
                     network["device_list"] = aigc_config.get("device_list", [])
                     network["link_list"] = aigc_config.get("link_list", [])
+
+                # 为没有 location 或 location 为空的设备设置随机位置
+                for device in network["device_list"]:
+                    if "location" not in device or not device.get("location"):
+                        x = random.randint(-300, 300)
+                        y = random.randint(-300, 300)
+                        device["location"] = f"{x},{y}"
+
                 logger.info(f"从 aigc.json 读取到 {len(network['device_list'])} 个设备和 {len(network['link_list'])} 条链路")
             except Exception as e:
                 logger.warning(f"读取 aigc.json 失败: {str(e)}，返回空数据")
