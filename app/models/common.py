@@ -25,6 +25,7 @@ class FileOperationRequest(BaseModel):
     path: str = Field(description="文件或目录路径")
     content: Optional[str] = Field(None, description="文件内容(用于写操作)")
     encoding: str = Field(default="utf-8", description="文件编码")
+    type: Optional[str] = Field(None, description="文件类型，type=log 时将文件写入共享日志目录")
 
 class FileOperationResponse(BaseModel):
     """文件操作响应模型"""

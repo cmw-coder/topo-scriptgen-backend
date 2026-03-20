@@ -64,13 +64,29 @@ async def write_file(request: FileOperationRequest):
     - 重置部署状态为 not_deployed
     - 异步调用卸载组网接口（如果存在 executorip）
 
+    特殊功能: 当 type=log 时，会忽略 path 中的路径，只使用文件名，
+    将文件写入共享日志目录 (get_aigc_tool_local_log_dir)。
+
     这些操作在后台执行，不会阻塞文件写入响应。"""
     try:
         if not request.content:
             raise HTTPException(status_code=400, detail="文件内容不能为空")
 
+        # 处理 type=log 的情况
+        file_path = request.path
+        if request.type == "log":
+            # 提取文件名，忽略路径
+            from pathlib import Path as PathlibPath
+            filename = PathlibPath(request.path).name
+            # 获取共享日志目录
+            log_dir = settings.get_aigc_tool_local_log_dir()
+            # 构建完整路径
+            file_path = str(PathlibPath(log_dir) / filename)
+            # 确保日志目录存在
+            PathlibPath(log_dir).mkdir(parents=True, exist_ok=True)
+
         result = await file_service.write_file(
-            request.path,
+            file_path,
             request.content,
             request.encoding
         )
