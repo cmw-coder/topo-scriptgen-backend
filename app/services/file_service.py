@@ -7,10 +7,12 @@ import asyncio
 import hashlib
 from datetime import datetime
 import glob
+import time
 
 from app.core.path_manager import path_manager
 from app.core.config import settings
 from app.models.common import DirectoryItem, FileOperationRequest, FileOperationResponse
+from app.services.topo_service import topo_service
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,50 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
         self._last_upload_hash = content_hash
         self._last_upload_time = now
         return False
+
+    async def _handle_default_topox_upload(self, file_path: Path, content: str) -> None:
+        """处理 default.topox 文件上传
+
+        Args:
+            file_path: 上传的文件路径
+            content: 文件内容（XML 格式）
+        """
+        import time
+        start_time = time.time()
+
+        logger.info("检测到 default.topox 上传，开始处理")
+
+        try:
+            # 幂等性检查
+            if self._is_duplicate_upload(content):
+                return
+
+            # 解析 topox 文件
+            network = topo_service.parse_topox_xml(content)
+            logger.debug(f"成功解析 topox，设备数: {len(network.device_list)}, 链路数: {len(network.link_list)}")
+
+            # 更新 aigc.json
+            topo_service.save_device_list_to_aigc_json(network)
+
+            # 重置部署状态
+            settings.set_deploy_status("not_deployed")
+            settings.set_deploy_error_message("通过上传 default.topox")
+            logger.info("已重置部署状态为 not_deployed，原因：通过上传 default.topox")
+
+            # 异步卸载
+            self._async_undeploy_if_needed()
+
+            elapsed = time.time() - start_time
+            logger.info(f"default.topox 处理完成，耗时 {elapsed:.2f} 秒")
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"处理 default.topox 失败: {str(e)}，耗时 {elapsed:.2f} 秒", exc_info=True)
+            # 不抛出异常，允许文件保存成功
+
+    async def _async_undeploy_if_needed(self) -> None:
+        """异步卸载（预留方法）"""
+        logger.debug("_async_undeploy_if_called 方法被调用")
 
     async def read_directory(self, directory_path: str) -> FileOperationResponse:
         """读取目录内容"""

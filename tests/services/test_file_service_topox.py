@@ -2,6 +2,9 @@ import pytest
 from app.services.file_service import FileService
 from pathlib import Path
 
+# Import the global file_service instance
+from app.services.file_service import file_service
+
 @pytest.mark.asyncio
 async def test_duplicate_upload_detection():
     """测试重复上传检测"""
@@ -36,3 +39,42 @@ async def test_different_content_not_duplicate():
 
     is_duplicate2 = file_service._is_duplicate_upload(content2)
     assert is_duplicate2 is False
+
+@pytest.mark.asyncio
+async def test_handle_default_topox_upload_basic():
+    """测试基本的 topox 处理流程"""
+    # 准备测试数据
+    valid_topox_content = """<?xml version="1.0" encoding="utf-8"?>
+<NETWORK>
+    <DEVICE_LIST>
+        <DEVICE>
+            <PROPERTY>
+                <NAME>device1</NAME>
+                <LOCATION>location1</LOCATION>
+            </PROPERTY>
+        </DEVICE>
+    </DEVICE_LIST>
+    <LINK_LIST>
+    </LINK_LIST>
+</NETWORK>"""
+
+    from pathlib import Path
+    from app.core.config import settings
+    import tempfile
+
+    # 创建临时文件
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.topox', delete=False) as f:
+        f.write(valid_topox_content)
+        temp_path = Path(f.name)
+
+    try:
+        # 调用处理方法
+        await file_service._handle_default_topox_upload(temp_path, valid_topox_content)
+
+        # 验证部署状态被重置
+        assert settings.get_deploy_status() == "not_deployed"
+        assert settings.get_deploy_error_message() == "通过上传 default.topox"
+
+    finally:
+        # 清理临时文件
+        temp_path.unlink()
