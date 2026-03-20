@@ -31,6 +31,30 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
         self._last_upload_hash: Optional[str] = None
         self._last_upload_time: Optional[datetime] = None
 
+    def _is_duplicate_upload(self, content: str) -> bool:
+        """检查是否为重复上传（2秒内相同内容）
+
+        Args:
+            content: 文件内容
+
+        Returns:
+            bool: True 表示重复上传，False 表示新上传
+        """
+        content_hash = hashlib.md5(content.encode()).hexdigest()
+        now = datetime.now()
+
+        if (self._last_upload_hash == content_hash and
+            self._last_upload_time and
+            (now - self._last_upload_time).total_seconds() <
+            settings.DEFAULT_TOPOX_DEBOUNCE_SECONDS):
+            logger.debug("检测到重复上传（2秒内相同内容），跳过处理")
+            return True
+
+        # 更新记录
+        self._last_upload_hash = content_hash
+        self._last_upload_time = now
+        return False
+
     async def read_directory(self, directory_path: str) -> FileOperationResponse:
         """读取目录内容"""
         try:
