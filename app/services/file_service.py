@@ -1,8 +1,10 @@
 import os
 import aiofiles
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Set
 import logging
+import asyncio
+import hashlib
 from datetime import datetime
 import glob
 
@@ -19,6 +21,15 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
 
     def __init__(self):
         self.path_manager = path_manager
+        # 异步任务追踪
+        self._undeploy_tasks: Set[asyncio.Task] = set()
+        # 并发控制信号量（最多同时1个卸载任务）
+        self._undeploy_semaphore = asyncio.Semaphore(1)
+        # 当前卸载任务引用
+        self._current_undeploy_task: Optional[asyncio.Task] = None
+        # 幂等性控制
+        self._last_upload_hash: Optional[str] = None
+        self._last_upload_time: Optional[datetime] = None
 
     async def read_directory(self, directory_path: str) -> FileOperationResponse:
         """读取目录内容"""
