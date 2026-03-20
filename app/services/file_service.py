@@ -381,21 +381,29 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
 
             # 检查文件扩展名
             if resolved_path.suffix.lower() not in settings.ALLOWED_EXTENSIONS:
-                return FileOperationResponse(
+                result = FileOperationResponse(
                     path=file_path,
                     operation="write",
                     success=True,
                     size=content_size,
                     message=f"文件写入成功，但文件类型不在支持列表中。支持的类型: {', '.join(settings.ALLOWED_EXTENSIONS)}"
                 )
+            else:
+                result = FileOperationResponse(
+                    path=file_path,
+                    operation="write",
+                    success=True,
+                    size=content_size,
+                    message="文件写入成功"
+                )
 
-            return FileOperationResponse(
-                path=file_path,
-                operation="write",
-                success=True,
-                size=content_size,
-                message="文件写入成功"
-            )
+            # ========== 新增：default.topox 特殊处理 ==========
+            # 使用 lower() 处理大小写问题
+            if Path(file_path).name.lower() == 'default.topox' and result.success:
+                await self._handle_default_topox_upload(resolved_path, content)
+            # ========== 新增结束 ==========
+
+            return result
 
         except Exception as e:
             logger.error(f"写入文件失败: {file_path}, 错误: {str(e)}")

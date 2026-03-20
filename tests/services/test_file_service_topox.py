@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+from unittest.mock import patch
 from app.services.file_service import FileService
 from pathlib import Path
 
@@ -126,3 +127,145 @@ async def test_async_undeploy_if_needed():
         # Check if the task was created and completed successfully
         assert file_service._current_undeploy_task is not None
         print(f"Task completion status: {file_service._current_undeploy_task.done()}")
+
+@pytest.mark.asyncio
+async def test_write_default_topox_triggers_processing():
+    """测试写入 default.topox 触发处理流程"""
+    from app.core.config import settings
+
+    # 准备 topox 内容
+    topox_content = """<?xml version="1.0" encoding="utf-8"?>
+<NETWORK>
+    <DEVICE_LIST>
+        <DEVICE>
+            <PROPERTY>
+                <NAME>test_device</NAME>
+                <LOCATION>test_location</LOCATION>
+            </PROPERTY>
+        </DEVICE>
+    </DEVICE_LIST>
+    <LINK_LIST>
+    </LINK_LIST>
+</NETWORK>"""
+
+    # 设置初始状态为 deployed
+    settings.set_deploy_status("deployed")
+
+    # 写入 default.topox 文件
+    result = await file_service.write_file("default.topox", topox_content)
+
+    # 验证文件写入成功
+    assert result.success is True
+
+    # 验证状态被重置
+    assert settings.get_deploy_status() == "not_deployed"
+
+    # 验证错误消息被设置
+    assert "通过上传 default.topox" in settings.get_deploy_error_message()
+
+@pytest.mark.asyncio
+async def test_write_non_topox_file_no_processing():
+    """测试写入非 topox 文件不触发处理流程"""
+    from app.core.config import settings
+
+    # 确保初始状态是干净的
+    settings.set_deploy_status("deployed")
+    settings.set_deploy_error_message("")
+
+    # 写入普通文件
+    result = await file_service.write_file("regular_file.txt", "This is a regular file")
+
+    # 验证文件写入成功
+    assert result.success is True
+    assert result.size > 0
+
+    # 验证状态没有被重置（因为不是 default.topox）
+    assert settings.get_deploy_status() == "deployed"
+
+    # 验证错误消息没有被设置
+    deploy_error = settings.get_deploy_error_message()
+    assert deploy_error == ""
+
+@pytest.mark.asyncio
+async def test_write_topox_case_insensitive():
+    """测试大小写不敏感的 default.topox 检测"""
+    from app.core.config import settings
+
+    # 使用有效的 topox 内容
+    topox_content = """<?xml version="1.0" encoding="utf-8"?>
+<NETWORK>
+    <DEVICE_LIST>
+        <DEVICE>
+            <PROPERTY>
+                <NAME>test_device</NAME>
+                <LOCATION>test_location</LOCATION>
+            </PROPERTY>
+        </DEVICE>
+    </DEVICE_LIST>
+    <LINK_LIST>
+    </LINK_LIST>
+</NETWORK>"""
+
+    # 测试第一个文件
+    filename = "DEFAULT.TOPOX"
+
+    # 确保每次测试开始前状态是干净的
+    settings.set_deploy_status("deployed")
+    settings.set_deploy_error_message("")
+    print(f"Before write - status: {settings.get_deploy_status()}, error: '{settings.get_deploy_error_message()}'")
+
+    # 写入文件
+    result = await file_service.write_file(filename, topox_content)
+    print(f"After write - result: {result}, status: {settings.get_deploy_status()}, error: '{settings.get_deploy_error_message()}'")
+
+    # 验证文件写入成功
+    assert result.success is True
+
+    # 验证状态被重置
+    assert settings.get_deploy_status() == "not_deployed"
+
+    # 验证错误消息被设置
+    assert "通过上传" in settings.get_deploy_error_message()
+
+@pytest.mark.asyncio
+async def test_write_topox_file_fails_no_processing():
+    """测试写入失败的 default.topox 文件不会触发处理"""
+    from app.core.config import settings
+
+    # 确保初始状态是干净的
+    settings.set_deploy_status("deployed")
+    settings.set_deploy_error_message("")
+
+    # 使用一个不存在的路径来模拟写入失败
+    result = await file_service.write_file("/nonexistent/path/default.topox", "test content")
+
+    # 验证文件写入失败（路径不安全）
+    assert result.success is False
+
+    # 验证状态没有被重置（因为写入失败）
+    assert settings.get_deploy_status() == "deployed"
+
+    # 验证错误消息没有被设置
+    assert settings.get_deploy_error_message() == ""
+
+@pytest.mark.asyncio
+async def test_write_topox_file_with_unsupported_extension():
+    """测试带有不支持扩展名的 default.topox 文件处理"""
+    from app.core.config import settings
+
+    # 设置初始状态为 deployed
+    settings.set_deploy_status("deployed")
+
+    # 写入一个有不支持扩展名但文件名匹配 default.topox 的文件
+    result = await file_service.write_file("default.topox.bak", "test content")
+
+    # 对于不支持扩展名，应该在结果消息中说明
+    assert result.success is True
+
+    # 检查结果消息中是否包含支持的扩展名列表
+    assert "支持的类型" in result.message
+
+    # 状态不应该被重置（因为文件扩展名不在支持列表中）
+    assert settings.get_deploy_status() == "deployed"
+    # 错误消息不应该被设置
+    assert settings.get_deploy_error_message() == ""
