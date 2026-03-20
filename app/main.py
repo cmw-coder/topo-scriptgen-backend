@@ -22,6 +22,7 @@ from app.api import metrics_v2  # 度量 v2
 from app.api import project
 from app.middleware.api_call_tracker import APICallTrackerMiddleware
 from app.services.auto_undeploy_service import auto_undeploy_service
+from app.services.file_service import file_service
 
 # 注意: Python 3.13 + Windows 事件循环策略已在 main.py 中设置
 # 这里不需要重复设置
@@ -199,6 +200,9 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
 
     yield
+
+    # 等待卸载任务完成
+    await file_service.wait_for_undeploy_tasks(timeout=5.0)
 
     # 关闭时执行
     logger.info("应用正在关闭...")
