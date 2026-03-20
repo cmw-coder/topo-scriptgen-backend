@@ -88,7 +88,7 @@ AI_FingerPrint_UUID: 20251225-VPMtKjgr
             logger.info("已重置部署状态为 not_deployed，原因：通过上传 default.topox")
 
             # 异步卸载（不等待完成）
-            self._async_undeploy_if_needed()
+            asyncio.create_task(self._async_undeploy_if_needed())
 
             elapsed = time.time() - start_time
             logger.info(f"default.topox 处理完成，耗时 {elapsed:.2f} 秒")

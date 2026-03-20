@@ -77,7 +77,7 @@ class Settings:
     DEFAULT_TOPOX_DEBOUNCE_SECONDS: int = 2  # 重复上传去重时间（秒）
     DEFAULT_TOPOX_ASYNC_UNDEPLOY: bool = True  # 是否启用异步卸载
     DEFAULT_TOPOX_UNDEPLOY_TIMEOUT: int = 300  # 卸载超时时间（秒）
-    DEFAULT_TOPOX_MAX_CONCURRENT_UNDEPLOY: int = 1  # 最大并发卸载数
+    DEFAULT_TOPOX_MAX_CONCURRENT_UNDEPLOY: int = 1  # 最大并发卸载任务数
 
     # AIGC 工具路径配置
     AIGC_TOOL_LOCAL_BASE: str = "/opt/coder/statistics/build/aigc_tool"
