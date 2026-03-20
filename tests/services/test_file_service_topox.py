@@ -190,6 +190,10 @@ async def test_write_non_topox_file_no_processing():
 async def test_write_topox_case_insensitive():
     """测试大小写不敏感的 default.topox 检测"""
     from app.core.config import settings
+    from app.services.file_service import FileService
+
+    # 创建新的 FileService 实例以避免重复上传检测
+    fresh_file_service = FileService()
 
     # 使用有效的 topox 内容
     topox_content = """<?xml version="1.0" encoding="utf-8"?>
@@ -215,7 +219,7 @@ async def test_write_topox_case_insensitive():
     print(f"Before write - status: {settings.get_deploy_status()}, error: '{settings.get_deploy_error_message()}'")
 
     # 写入文件
-    result = await file_service.write_file(filename, topox_content)
+    result = await fresh_file_service.write_file(filename, topox_content)
     print(f"After write - result: {result}, status: {settings.get_deploy_status()}, error: '{settings.get_deploy_error_message()}'")
 
     # 验证文件写入成功
@@ -236,10 +240,12 @@ async def test_write_topox_file_fails_no_processing():
     settings.set_deploy_status("deployed")
     settings.set_deploy_error_message("")
 
-    # 使用一个不存在的路径来模拟写入失败
-    result = await file_service.write_file("/nonexistent/path/default.topox", "test content")
+    # 模拟文件写入失败的情况 - 使用一个超大文件
+    # MAX_FILE_SIZE is 100MB, so we'll create something larger
+    large_content = "x" * (101 * 1024 * 1024)  # 101MB
+    result = await file_service.write_file("large_default.topox", large_content)
 
-    # 验证文件写入失败（路径不安全）
+    # 验证文件写入失败（内容过大）
     assert result.success is False
 
     # 验证状态没有被重置（因为写入失败）
@@ -269,3 +275,73 @@ async def test_write_topox_file_with_unsupported_extension():
     assert settings.get_deploy_status() == "deployed"
     # 错误消息不应该被设置
     assert settings.get_deploy_error_message() == ""
+
+
+@pytest.mark.asyncio
+async def test_default_topox_case_insensitive():
+    """测试文件路径大小写不敏感"""
+    from app.core.config import settings
+    from app.services.file_service import FileService
+
+    topox_content = "<?xml version='1.0'?><NETWORK></NETWORK>"
+
+    # 测试不同大小写，每次使用新的 FileService 实例
+    for i, filename in enumerate(["default.topox", "Default.topox", "DEFAULT.TOPOX"]):
+        # 创建新的 FileService 实例以避免重复上传检测
+        fresh_file_service = FileService()
+
+        # 重置状态
+        settings.set_deploy_status("deployed")
+        settings.set_deploy_error_message(f"Test run {i+1}")
+
+        # 写入文件
+        result = await fresh_file_service.write_file(filename, topox_content)
+        assert result.success is True
+
+        # 验证状态被重置
+        assert settings.get_deploy_status() == "not_deployed"
+        assert "通过上传" in settings.get_deploy_error_message()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_default_topox_upload():
+    """测试并发上传 default.topox"""
+    import asyncio
+
+    topox_content = "<?xml version='1.0'?><NETWORK></NETWORK>"
+
+    # 并发上传5次
+    tasks = [
+        file_service.write_file("default.topox", topox_content)
+        for _ in range(5)
+    ]
+
+    results = await asyncio.gather(*tasks)
+
+    # 所有上传都应该成功
+    assert all(r.success for r in results)
+
+    # 验证只有一个卸载任务在执行（通过检查 _undeploy_tasks 集合）
+    await asyncio.sleep(0.5)  # 等待任务创建
+    assert len(file_service._undeploy_tasks) <= 1, "应该最多只有一个活跃的卸载任务"
+
+
+@pytest.mark.asyncio
+async def test_invalid_topox_still_saves_file():
+    """测试无效的 topox 文件仍然被保存"""
+    from app.core.config import settings
+
+    # 无效的 XML
+    invalid_content = "this is not valid xml"
+
+    # 设置初始状态
+    initial_status = settings.get_deploy_status()
+
+    # 写入文件
+    result = await file_service.write_file("default.topox", invalid_content)
+
+    # 文件应该保存成功
+    assert result.success is True
+
+    # 状态不应该改变（因为解析失败）
+    assert settings.get_deploy_status() == initial_status
