@@ -94,13 +94,9 @@ async def delete_file_or_directory(
     try:
 
 
-        if Path(path).suffix == '.topox':
-            return FileOperationResponse(
-                path=path,
-                operation="delete",
-                success=False,
-                message=".topox 文件受保护，不允许删除"
-            )
+        # Only protect default.topox, not other .topox files
+        if Path(path).name == 'default.topox':
+            raise HTTPException(status_code=400, detail="default.topox 文件受保护，不允许删除")
 
         result = await file_service.delete_file(path)
 
