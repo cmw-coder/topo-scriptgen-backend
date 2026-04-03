@@ -584,13 +584,31 @@ async def run_script(request: RunSingleScriptRequest):
         raise HTTPException(status_code=500, detail=f"运行脚本失败: {error_detail}")
 
 @router.post("/undeploy", response_model=BaseResponse)
-async def undeploy_environment(request: ExecutorRequest):
+async def undeploy_environment():
     """
     释放测试环境
 
-    - **executorip**: 执行机IP地址
+    自动从 aigc.json 文件中读取 exec_ip 执行释放操作。
+    如果 aigc.json 中不存在 exec_ip，则返回成功响应（不执行释放操作）。
     """
     try:
+        logger = logging.getLogger(__name__)
+
+        # 从 aigc.json 读取 exec_ip
+        executorip = itc_service._get_exec_ip_from_aigc_json()
+
+        if not executorip:
+            logger.info("aigc.json 中不存在 exec_ip，无需释放环境")
+            return BaseResponse(
+                status="ok",
+                message="未找到部署信息，无需释放环境",
+                data={"return_code": "200", "return_info": "未找到部署信息"}
+            )
+
+        logger.info(f"从 aigc.json 读取到 exec_ip: {executorip}，开始释放环境")
+
+        # 构造请求并执行释放
+        request = ExecutorRequest(executorip=executorip)
         result = await itc_service.undeploy_environment(request)
 
         if result.return_code == "200":
