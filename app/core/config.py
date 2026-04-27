@@ -81,7 +81,7 @@ class Settings:
 
     # AIGC 工具路径配置
     AIGC_TOOL_LOCAL_BASE: str = "/opt/coder/statistics/build/aigc_tool"
-    AIGC_TOOL_UNC_BASE: str = "//10.141.187.210/webide/aigc_tool"
+    AIGC_TOOL_UNC_BASE: str = "//10.141.187.201/webide/aigc_tool"
 
     @classmethod
     def _get_aigc_project_name(cls) -> str:
@@ -214,7 +214,7 @@ class Settings:
     def get_aigc_tool_unc_dir(cls, username: Optional[str] = None) -> str:
         """获取 AIGC 工具 UNC 目录路径（网络共享路径，用于 ITC 部署）
 
-        路径格式：//10.141.187.210/webide/aigc_tool/{username}/{project_name}/
+        路径格式：//10.141.187.201/webide/aigc_tool/{username}/{project_name}/
 
         Args:
             username: 用户名，如果不提供则使用当前系统用户名
