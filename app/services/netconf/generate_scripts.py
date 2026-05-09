@@ -42,10 +42,7 @@ def setup_agent_environment():
     for var in proxy_vars:
         os.environ.pop(var, None)
 
-    # 设置 Anthropic 相关环境变量
-    os.environ["ANTHROPIC_BASE_URL"] = "http://10.144.41.149:4000/"
-    os.environ["ANTHROPIC_AUTH_TOKEN"] = "xx"
-    os.environ["ANTHROPIC_LOG"] = "debug"
+    # ANTHROPIC_* 环境变量由 app.services.claude_api.auth.setup_claude_auth() 统一设置
 
 
 # ==================== 生成 NETCONF 测试脚本 ====================

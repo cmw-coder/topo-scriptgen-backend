@@ -166,6 +166,11 @@ async def lifespan(app: FastAPI):
     """应用启动和关闭时的处理"""
     # 启动时执行
     logger = logging.getLogger(__name__)
+
+    # 初始化 Claude Agent SDK 认证（查询/缓存 API Key，设置环境变量）
+    from app.services.claude_api.auth import setup_claude_auth
+    setup_claude_auth()
+
     logger.info("=" * 50)
     logger.info(f"启动 {settings.PROJECT_NAME} v{settings.VERSION}")
     logger.info(f"工作目录: {path_manager.get_project_root()}")

@@ -208,8 +208,6 @@ if __name__ == "__main__":
         "CLAUDE_DISABLE_FILE_WATCHER": "1",
         "CHOKIDAR_USEPOLLING": "true",
         "NODE_NO_WATCHERS": "1",
-        "ANTHROPIC_BASE_URL": "http://10.144.41.149:4000/",
-        "ANTHROPIC_AUTH_TOKEN": 'xx'
     })
     
     print(f"当前脚本路径: {__file__}")

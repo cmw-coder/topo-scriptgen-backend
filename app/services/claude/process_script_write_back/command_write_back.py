@@ -1552,8 +1552,6 @@ def main():
         "CLAUDE_DISABLE_FILE_WATCHER": "1",
         "CHOKIDAR_USEPOLLING": "true",
         "NODE_NO_WATCHERS": "1",
-        "ANTHROPIC_BASE_URL": "http://10.144.41.149:4000/",
-        "ANTHROPIC_AUTH_TOKEN": 'xx'
     })
 
     # 要删除的代理环境变, 避免检索时使用代理

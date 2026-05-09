@@ -17,16 +17,6 @@ for var in proxy_vars:
 
 print("已成功清除代理环境变量")
 
-import os
-
-# 设置Anthropic相关环境变量
-os.environ["ANTHROPIC_BASE_URL"] = "http://10.144.41.149:4000/"
-os.environ["ANTHROPIC_AUTH_TOKEN"] = "xx"
-
-# 验证是否设置成功
-print("ANTHROPIC_BASE_URL:", os.getenv("ANTHROPIC_BASE_URL"))
-print("ANTHROPIC_AUTH_TOKEN:", os.getenv("ANTHROPIC_AUTH_TOKEN"))
-
 def escape_all_special_chars(text: str) -> str:
     # 1. json.dumps 会把特殊字符转义 (例如 \n -> \\n)
     # 2. ensure_ascii=False 保证中文不会变成 \uXXXX 乱码

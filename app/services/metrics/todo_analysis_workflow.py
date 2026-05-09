@@ -29,10 +29,6 @@ for var in proxy_vars:
 
 print("已成功清除代理环境变量")
 
-# 设置Anthropic相关环境变量
-os.environ["ANTHROPIC_BASE_URL"] = "http://10.144.41.149:4000/"
-os.environ["ANTHROPIC_AUTH_TOKEN"] = "xx"
-
 def escape_all_special_chars(text: str) -> str:
     return json.dumps(text, ensure_ascii=False)[1:-1]
 
