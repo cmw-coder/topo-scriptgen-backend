@@ -178,6 +178,7 @@ async def _generate_scripts_for_subdir(
             setting_sources=["user"],  # 不加载 project 设置
             permission_mode="bypassPermissions",
             allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
+            max_thinking_tokens=0,
         )
         
         # 构造 prompt - 调用 netconf_generator 子 agent

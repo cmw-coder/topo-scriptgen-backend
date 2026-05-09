@@ -152,9 +152,10 @@ async def process_convert_folder(folder_path: str, timeout_minutes: int) -> Dict
         options = ClaudeAgentOptions(
             system_prompt={"type": "preset", "preset": "claude_code"},
             allowed_tools=["Bash", "Edit", "Glob", "Grep", "Read", "Write"],
-            permission_mode="bypassPermissions", 
+            permission_mode="bypassPermissions",
             cwd=folder_path,
-            max_turns = 20
+            max_turns=20,
+            max_thinking_tokens=0,
         )
         log_path = os.path.join(folder_path, "claude_run.log")
         logger = ThreadSafeLogger(log_path)

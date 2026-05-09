@@ -5,11 +5,37 @@ Script Generator API 主程序入口
 这个文件是项目的启动入口，使用 uvicorn 运行 FastAPI 应用。
 """
 
-import uvicorn
+import subprocess
 import sys
 import asyncio
 from pathlib import Path
 import argparse
+
+# ============ 自动安装/升级依赖 ============
+def _ensure_dependencies():
+    """确保依赖包版本匹配 requirements.txt 中的指定版本"""
+    req_path = Path(__file__).parent / "requirements.txt"
+    if not req_path.exists():
+        print("[WARN] requirements.txt not found, skipping dependency check")
+        return
+    print(f"[INFO] Installing dependencies from {req_path}...")
+    try:
+        # 不捕获输出，实时打印到终端，避免用户觉得卡死
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "-r", str(req_path)],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        print("[INFO] Dependencies installed successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"[WARN] pip install failed (exit code {e.returncode}), continuing anyway...")
+    except Exception as e:
+        print(f"[WARN] Failed to run pip install: {e}, continuing anyway...")
+
+_ensure_dependencies()
+# ===========================================
+
+import uvicorn
 
 # ============ Python 3.13 + Windows 事件循环修复 ============
 # 必须在导入任何异步库之前设置事件循环策略

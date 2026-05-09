@@ -5,10 +5,10 @@ import sys
 from datetime import datetime
 import getpass
 from claude_agent_sdk import (
-    query, 
-    ClaudeAgentOptions, 
-    AssistantMessage, 
-    ToolUseBlock, 
+    query,
+    ClaudeAgentOptions,
+    AssistantMessage,
+    ToolUseBlock,
     TextBlock
 )
 
@@ -90,10 +90,11 @@ async def stream_analyze_todo_with_agent(log_path: str, workspace: str, export_f
 
     options = ClaudeAgentOptions(
         # 关键修改：将 CWD 直接设置为 log 的子文件夹
-        cwd=workspace, 
-        setting_sources=["user"], 
+        cwd=workspace,
+        setting_sources=["user"],
         permission_mode="bypassPermissions",
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
+        max_thinking_tokens=0,
     )
 
     print(f"📄 正在解析{log_path}目录内容...")

@@ -64,6 +64,9 @@ async def stream_generate_conftest_response(test_point: str, workspace: str = ""
         # 4. 允许的工具
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
 
+        # 5. 禁用 extended thinking（兼容新旧 SDK）
+        max_thinking_tokens=0,
+
         # system_prompt={"type": "preset", "preset": "claude_code"}
     )
 
@@ -134,6 +137,9 @@ async def stream_test_script_response(test_point: str, workspace: str = "", task
 
         # 4. 允许的工具
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
+
+        # 5. 禁用 extended thinking（兼容新旧 SDK）
+        max_thinking_tokens=0,
 
         # system_prompt={"type": "preset", "preset": "claude_code"}
     )
@@ -222,6 +228,9 @@ async def stream_fix_script_response(return_msg: str = "", workspace: str = "", 
 
         # 4. 允许的工具
         allowed_tools=["Bash", "Read", "Write", "Glob", "Grep"],
+
+        # 5. 禁用 extended thinking（兼容新旧 SDK）
+        max_thinking_tokens=0,
 
         # system_prompt={"type": "preset", "preset": "claude_code"}
     )
